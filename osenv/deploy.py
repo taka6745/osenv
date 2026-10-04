@@ -32,7 +32,7 @@ def deploy(config_path, build_id=None):
             raise ValueError(f'Build hash mismatch: {name}')
     identity = str(uuid.uuid4())
     run = ROOT / 'runs' / identity
-    run.mkdir(parents=True)
+    run.mkdir(parents=True, mode=0o700)
     modes = {mode: build(mode) for mode in ['protected32', 'long64']}
     save(run / 'manifest.json', {'schema': 1, 'kind': 'deployment', 'run_id': identity,
                                 'private_config': config, 'build': built, 'modes': modes})
@@ -52,7 +52,7 @@ def deploy_worker(identity):
     built = manifest['build']
     build_id = built['build_id']
     host = manifest['private_config']['ssh_host']
-    remote = '/var/lib/vz/osenv-harness/' + build_id
+    remote = '/var/lib/vz/osenv-harness/' + build_id + '/' + identity
     ssh = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-o', 'ServerAliveInterval=5',
            '-o', 'ServerAliveCountMax=2', host]
     try:

@@ -8,7 +8,7 @@ from .core import ROOT, command, doctor, get_run, load, save
 def launch(operation):
     identity = str(uuid.uuid4())
     run = ROOT / 'runs' / identity
-    run.mkdir(parents=True)
+    run.mkdir(parents=True, mode=0o700)
     save(run / 'manifest.json', {'schema': 1, 'kind': 'host-job', 'operation': operation})
     save(run / 'status.json', {'state': 'running', 'ok': True})
     output = (run / 'owner.log').open('ab')

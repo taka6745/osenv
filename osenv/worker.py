@@ -47,7 +47,7 @@ def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=N
     validate_image(image, fixture=not manual)
     identity = str(uuid.uuid4())
     run = ROOT / 'runs' / identity
-    run.mkdir(parents=True)
+    run.mkdir(parents=True, mode=0o700)
     if directory:
         for name in ['boot.elf', 'boot.bin']:
             if (directory / name).exists():
