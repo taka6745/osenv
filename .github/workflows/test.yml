@@ -17,6 +17,11 @@ jobs:
           if brew list --versions openssl@1.1 >/dev/null 2>&1; then
             brew unlink openssl@1.1
           fi
+          # Some runner images retain this link after removing the old keg.
+          openssl_link="$(brew --prefix)/bin/openssl"
+          if [ -L "$openssl_link" ] && [ "$(readlink "$openssl_link")" = "$(brew --prefix)/opt/openssl@1.1/bin/openssl" ]; then
+            rm "$openssl_link"
+          fi
           brew install llvm lld nasm qemu gdb
           brew upgrade llvm lld nasm qemu gdb
       - name: Check pinned tool versions
