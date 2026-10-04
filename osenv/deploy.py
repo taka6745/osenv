@@ -58,8 +58,8 @@ def deploy_worker(identity):
     try:
         archive_path = run / 'source.tar.gz'
         with tarfile.open(archive_path, 'w:gz') as archive:
-            for path in sorted((ROOT / 'osenv').glob('*.py')):
-                archive.add(path, arcname=str(path.relative_to(ROOT)))
+            for path in sorted(Path(__file__).parent.glob('*.py')):
+                archive.add(path, arcname='osenv/' + path.name)
             for item in [built, *manifest['modes'].values()]:
                 for path in Path(item['directory']).iterdir():
                     if path.is_file():

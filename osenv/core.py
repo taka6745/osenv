@@ -53,6 +53,8 @@ def load(path):
 
 
 def doctor(strict=True):
+    if sys.version_info < (3, 12):
+        raise RuntimeError('Python 3.12+ required; choose a supported interpreter explicitly')
     tools = {}
     for name, expected in TOOLS.items():
         path = tool(name)

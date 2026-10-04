@@ -12,7 +12,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install host tools
-        run: brew install llvm lld nasm qemu gdb
+        run: |
+          brew update
+          brew install llvm lld nasm qemu gdb
+          brew upgrade llvm lld nasm qemu gdb
       - name: Check pinned tool versions
         run: python3 -m osenv doctor
       - name: Boot and debugger gate
