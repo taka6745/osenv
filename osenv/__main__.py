@@ -60,6 +60,7 @@ def parser():
     run.add_argument('--mode', choices=['real16', 'protected32', 'long64'], default='real16')
     run.add_argument('--memory', type=int, default=32)
     run.add_argument('--network', choices=['none', 'isolated'], default='none')
+    run.add_argument('--disk-interface', choices=['ide', 'floppy'])
     for operation in ['status', 'stop', 'recover', 'connections', 'inspect', '_worker', '_deploy_worker', '_job_worker']:
         item = sub.add_parser(operation)
         item.add_argument('run_id')
@@ -100,7 +101,7 @@ def parser():
     item.add_argument('--hex', action='store_true')
     item = sub.add_parser('capture')
     item.add_argument('run_id')
-    item.add_argument('--mode', choices=['real16', 'protected32', 'long64'], default='real16')
+    item.add_argument('--mode', choices=['real16', 'protected32', 'long64'])
     item = sub.add_parser('serial')
     item.add_argument('run_id')
     item.add_argument('text')
@@ -114,7 +115,7 @@ def parser():
     item.add_argument('--length', type=int, default=64)
     item.add_argument('--value')
     item.add_argument('--symbols')
-    item.add_argument('--mode', choices=['real16', 'protected32', 'long64'], default='real16')
+    item.add_argument('--mode', choices=['real16', 'protected32', 'long64'])
     item = sub.add_parser('deploy')
     item.add_argument('--config', default='local/deploy.json')
     item.add_argument('--build-id')
@@ -143,7 +144,8 @@ def dispatch(a):
         return build(a.fixture_mode)
     if operation == 'run':
         return start(a.scenario, a.timeout, a.paused, a.image, manual=a.manual,
-                     symbols=a.symbols, mode=a.mode, memory=a.memory, network=a.network)
+                     symbols=a.symbols, mode=a.mode, memory=a.memory, network=a.network,
+                     disk_interface=a.disk_interface)
     if operation == 'test':
         if a.background:
             from .jobs import launch
@@ -213,7 +215,7 @@ def dispatch(a):
         inputs = manifest['input']
         return start(inputs['scenario'], inputs['timeout'], inputs['paused'], old / 'disk.img',
                      {'directory': str(old)}, manual=inputs['manual'], mode=inputs['mode'], memory=inputs['memory_mib'],
-                     network=inputs['network'])
+                     network=inputs['network'], disk_interface=inputs['disk_interface'])
     if operation == 'recover':
         old = get_run(a.run_id)
         manifest = load(old / 'manifest.json')
@@ -224,7 +226,10 @@ def dispatch(a):
             except (OSError, RuntimeError):
                 from .recovery import rescue
                 rescue(a.run_id)
-        return start('pass', 8, image=old / 'disk.img', existing_build={'directory': str(old)})
+        inputs = manifest['input']
+        return start('pass', inputs['timeout'], image=old / 'disk.img', existing_build={'directory': str(old)},
+                     manual=inputs['manual'], mode=inputs['mode'], memory=inputs['memory_mib'],
+                     network=inputs['network'], disk_interface=inputs['disk_interface'])
     if operation == 'deploy':
         from .deploy import deploy
         return deploy(a.config, a.build_id)

@@ -21,6 +21,9 @@ command with `python3 -m pip install -e .`. Operations use the current project
 directory, or `OSENV_ROOT`. Run fixture builds from this checkout or a project
 containing the fixture sources. `run --manual --image ...` can inspect another
 raw BIOS image without rebuilding it; pass its ELF with `--symbols`.
+Custom images default to IDE; fixture images use floppy. Override with
+`--disk-interface`. Manual observation reports `verified: false`; it never
+claims an arbitrary guest has passed a test.
 
 The build gate pins LLVM/LLD 23.1.2, NASM 3.02, QEMU 11.1.2, GDB 17.2 and the
 `pc-i440fx-9.2` machine. Homebrew setup installs available releases; doctor fails

@@ -187,13 +187,13 @@ def integration():
             if expected not in (get_run(identity) / 'serial.log').read_bytes():
                 errors.append('Mode boot marker missing')
             registers = call(identity, {'operation': 'debug', 'action': 'registers', 'mode': mode})
-            decoded = call(identity, {'operation': 'debug', 'action': 'disassemble', 'mode': mode,
-                                       'address': '0x7c00', 'length': 32})
-            if not decoded.get('disassembly'):
-                errors.append('Mode disassembly unavailable')
             from .core import command, tool
             symbols = command([tool('llvm-nm'), '-n', get_run(identity) / 'boot.elf'])
             hold = next(line.split()[0] for line in symbols.splitlines() if line.endswith(' hold'))
+            decoded = call(identity, {'operation': 'debug', 'action': 'disassemble',
+                                       'address': '0x'+hold, 'length': 32})
+            if not decoded.get('disassembly') or 'pause' not in decoded['disassembly']:
+                errors.append('Actual mode instructions not decoded correctly')
             call(identity, {'operation': 'debug', 'action': 'breakpoint', 'address': '0x'+hold})
             status = call(identity, {'operation': 'status'})
             if 'breakpoint-hit' not in status.get('breakpoints', ''):
@@ -220,6 +220,26 @@ def integration():
     checks.append({'case': 'dead-controller-recovery', 'ok': fresh.get('verdict') == 'pass'
                    and stale.get('verdict') == 'owner_lost',
                    'run_ids': [abandoned['run_id'], rescued['run_id']]})
+    # The generic path must work without a project fixture build or floppy disk.
+    custom = start(timeout=30, manual=True, paused=True,
+                   image=Path(built['directory']) / 'fixture.img',
+                   symbols=Path(built['directory']) / 'boot.elf')
+    identity = custom['run_id']
+    call(identity, {'operation': 'debug', 'action': 'breakpoint', 'address': '_start'})
+    at_boot = call(identity, {'operation': 'status'})
+    call(identity, {'operation': 'debug', 'action': 'delete-breakpoints'})
+    call(identity, {'operation': 'debug', 'action': 'resume'})
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline and b'OSE1 READY' not in (get_run(identity)/'serial.log').read_bytes():
+        time.sleep(0.05)
+    call(identity, {'operation': 'serial', 'text': '1P\n'})
+    exited = wait(identity)
+    custom_manifest = load(get_run(identity)/'manifest.json')
+    checks.append({'case': 'custom-IDE-image-symbols-and-serial', 'ok':
+                   'breakpoint-hit' in at_boot.get('breakpoints', '')
+                   and exited.get('verdict') == 'manual_exited' and exited.get('exit_code') == 33
+                   and custom_manifest['input']['disk_interface'] == 'ide'
+                   and b'OSE1 DONE' in (get_run(identity)/'serial.log').read_bytes(), 'run_id': identity})
     result = {'ok': all(c['ok'] for c in checks), 'checks': checks,
               'build_id': built['build_id']}
     ROOT.joinpath('artifacts').mkdir(exist_ok=True)

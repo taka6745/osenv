@@ -30,7 +30,7 @@ class EventLog(list):
 
 
 def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=None,
-          manual=False, symbols=None, mode='real16', memory=32, network='none'):
+          manual=False, symbols=None, mode='real16', memory=32, network='none', disk_interface=None):
     if scenario not in SCENARIOS or not 0.2 <= timeout <= 600:
         raise ValueError('Invalid scenario or timeout (0.2..600 seconds)')
     external = manual and image is not None and existing_build is None
@@ -41,6 +41,9 @@ def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=N
         raise ValueError('Invalid CPU mode or RAM size (16..4096 MiB)')
     if network not in ['none', 'isolated']:
         raise ValueError('Network must be none or isolated')
+    disk_interface = disk_interface or ('ide' if external else 'floppy')
+    if disk_interface not in ['ide', 'floppy']:
+        raise ValueError('Disk interface must be ide or floppy')
     validate_image(image, fixture=not manual)
     identity = str(uuid.uuid4())
     run = ROOT / 'runs' / identity
@@ -64,7 +67,8 @@ def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=N
          'image_sha256': digest(run / 'disk.img'),
          'input': {'scenario': scenario, 'command': '1' + SCENARIOS[scenario] + '\n',
                    'seed': 7, 'expected_value': 42, 'timeout': timeout, 'paused': paused,
-                   'manual': manual, 'mode': mode, 'memory_mib': memory, 'network': network},
+                   'manual': manual, 'mode': mode, 'memory_mib': memory, 'network': network,
+                   'disk_interface': disk_interface},
          'socket_directory': str(sockets), 'source_hashes':
          {'osenv/' + p.name: digest(p) for p in sorted(Path(__file__).parent.glob('*.py'))}})
     for name in ['serial.log', 'early.log', 'qemu.log', 'trace.log', 'events.jsonl', 'annotations.jsonl', 'actions.jsonl']:
@@ -114,8 +118,8 @@ class Owner:
         save(self.run / 'status.json', result)
         return result
 
-    def capture(self, reason='manual', mode='real16'):
-        mode = self.manifest['input']['mode'] if mode == 'real16' else mode
+    def capture(self, reason='manual', mode=None):
+        mode = mode or self.manifest.get('debug_mode', self.manifest['input']['mode'])
         self.capture_count += 1
         target = self.run / f'capture-{self.capture_count:03d}'
         target.mkdir()
@@ -133,9 +137,12 @@ class Owner:
         try:
             if not self.breakpoints:
                 self.breakpoints = Debugger(self.sockets / 'gdb', self.run / 'boot.elf')
+            pc = '"($cs*16)+$rip"' if mode == 'real16' else '$pc'
+            stack = {'real16': 'x/16hx $sp', 'protected32': 'x/16wx $esp', 'long64': 'x/16gx $rsp'}[mode]
             result = self.breakpoints.run(['-data-list-register-names', '-data-list-register-values x',
+                                           f'-data-read-memory-bytes {pc} 128',
                                            '-data-read-memory-bytes 0x7c00 512',
-                                           '-interpreter-exec console "x/16hx $sp"'], mode)
+                                           '-interpreter-exec console ' + json.dumps(stack)], mode)
             self.qmp.call('stop')
             save(target / 'gdb.json', result)
             (target / 'gdb.mi').write_text(result['stdout'])
@@ -150,7 +157,7 @@ class Owner:
                                       'filename': str(target / 'memory.bin')})
         except Exception as error:
             errors.append(f'Physical memory dump: {error}')
-        if reason == 'panic' and (target / 'gdb.json').exists() and (target / 'memory.bin').exists():
+        if reason == 'panic' and mode == 'real16' and (target / 'gdb.json').exists() and (target / 'memory.bin').exists():
             import struct
             registers = load(target / 'gdb.json').get('registers', {})
             stack = int(registers.get('rsp', '0'), 0)
@@ -178,7 +185,7 @@ class Owner:
                 return {'ok': True, **self.status(), 'breakpoints': self.breakpoints.collect()}
             return {'ok': True, **self.status()}
         if operation == 'capture':
-            return self.capture(mode=request.get('mode', 'real16'))
+            return self.capture(mode=request.get('mode'))
         if operation in ['stop', 'recover']:
             self.capture(operation)
             self.reason = 'stopped'
@@ -186,6 +193,9 @@ class Owner:
             return {'ok': True, 'state': 'stopping'}
         if operation == 'debug':
             action = request['action']
+            mode = request.get('mode') or self.manifest.get('debug_mode', self.manifest['input']['mode'])
+            self.manifest['debug_mode'] = mode
+            save(self.run / 'manifest.json', self.manifest)
             if action == 'resume':
                 if self.breakpoints:
                     self.breakpoints.send('-exec-continue')
@@ -217,7 +227,7 @@ class Owner:
                 result = self.breakpoints.run(['-interpreter-exec console ' + json.dumps(console)])
                 if result['ok']:
                     self.manifest.setdefault('symbol_files', []).append({'elf': str(destination.relative_to(self.run)),
-                            'sha256': checksum, 'text_address': address, 'mode': request.get('mode', 'real16')})
+                            'sha256': checksum, 'text_address': address, 'mode': mode})
                     save(self.run / 'manifest.json', self.manifest)
                 return result
             if action == 'breakpoint':
@@ -241,7 +251,7 @@ class Owner:
                                   request.get('value'))
             if not self.breakpoints:
                 self.breakpoints = Debugger(self.sockets / 'gdb', self.run / 'boot.elf')
-            result = self.breakpoints.run(commands, request.get('mode', 'real16'))
+            result = self.breakpoints.run(commands, mode)
             self.qmp.call('stop')
             save(self.run / 'last-debug.json', result)
             self.status()
@@ -323,8 +333,9 @@ class Owner:
                   '-d', 'guest_errors', '-D', str(self.run / 'trace.log'),
                   '-rtc', 'base=2000-01-01T00:00:00,clock=vm',
                   '-icount', 'shift=3,align=off,sleep=off', '-S',
-                  '-drive', f'file={self.run / "overlay.qcow2"},format=qcow2,if=floppy',
-                  '-boot', 'a', '-device', 'isa-debug-exit,iobase=0xf4,iosize=0x04',
+                  '-drive', f'file={self.run / "overlay.qcow2"},format=qcow2,if={self.manifest["input"]["disk_interface"]}',
+                  '-boot', 'a' if self.manifest['input']['disk_interface'] == 'floppy' else 'c',
+                  '-device', 'isa-debug-exit,iobase=0xf4,iosize=0x04',
                   '-chardev', f'socket,id=serial,path={self.sockets / "serial"},server=on,wait=off',
                   '-serial', 'chardev:serial', '-debugcon', f'file:{self.run / "early.log"}',
                   '-qmp', f'unix:{self.sockets / "qmp"},server=on,wait=off',
@@ -444,7 +455,9 @@ class Owner:
         if self.reason == 'stopped':
             result = {'ok': False, 'verdict': 'stopped'}
         if self.manifest['input']['manual'] and self.reason == 'stopped':
-            result = {'ok': True, 'verdict': 'manual_stopped'}
+            result = {'ok': True, 'verdict': 'manual_stopped', 'verified': False}
+        if self.manifest['input']['manual'] and self.reason == 'exit':
+            result = {'ok': True, 'verdict': 'manual_exited', 'verified': False}
         self.cleanup()
         self.state = 'finished'
         self.status(**result, elapsed_seconds=time.monotonic()-self.started,
