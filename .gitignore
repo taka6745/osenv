@@ -1,0 +1,14 @@
+/build/
+/artifacts/
+/runs/
+/local/
+.env
+.env.*
+*.qcow2
+*.raw
+*.img
+*.dump
+*.core
+__pycache__/
+.pytest_cache/
+.DS_Store
