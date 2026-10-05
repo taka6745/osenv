@@ -9,6 +9,10 @@ from .worker import start
 
 def integration():
     from .__main__ import call, wait
+    from .integrity import audit
+    integrity = audit(Path(__file__).resolve().parent.parent)
+    if not integrity['ok']:
+        return integrity
     built = build()
     import io
     import unittest
@@ -240,6 +244,18 @@ def integration():
                    and exited.get('verdict') == 'manual_exited' and exited.get('exit_code') == 33
                    and custom_manifest['input']['disk_interface'] == 'ide'
                    and b'OSE1 DONE' in (get_run(identity)/'serial.log').read_bytes(), 'run_id': identity})
+    # Unknown guest commands must fail on the real serial execution path.
+    rejected = start('pass', manual=True, image=str(Path(built['directory']) / 'fixture.img'), timeout=8)
+    identity = rejected['run_id']
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline and b'OSE1 READY' not in (get_run(identity)/'serial.log').read_bytes():
+        time.sleep(0.05)
+    call(identity, {'operation': 'serial', 'text': '1X\n'})
+    completed = wait(identity)
+    raw = (get_run(identity)/'serial.log').read_bytes()
+    checks.append({'case': 'unknown-command-rejected', 'ok': completed.get('exit_code') == 35
+                   and b'OSE1 ERROR unsupported-command' in raw and b'OSE1 DONE' not in raw,
+                   'run_id': identity})
     result = {'ok': all(c['ok'] for c in checks), 'checks': checks,
               'build_id': built['build_id']}
     ROOT.joinpath('artifacts').mkdir(exist_ok=True)

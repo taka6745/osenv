@@ -45,23 +45,37 @@ ready:
     je reset
     cmp bl, 'B'
     je bad
+    cmp bl, 'P'
+    je calculate
+    cmp bl, 'W'
+    jne invalid
+calculate:
     ; The fixture performs a real arithmetic assertion before reporting value 42.
     mov ax, 6
     mov cx, 7
     mul cx
     cmp ax, 42
     jne bad
+    ; Format the actual computed quotient and remainder, not a canned result.
+    mov cl, 10
+    div cl
+    add al, '0'
+    add ah, '0'
+    mov [digits], ax
     mov si, result
-    cmp bl, 'W'
-    jne .send
-    mov si, wrong_exit
-.send:
     call puts
     mov al, 0x10
     cmp bl, 'W'
     jne .exit
     inc al
 .exit:
+    mov dx, 0xf4
+    out dx, al
+    jmp silent_stop
+invalid:
+    mov si, invalid_msg
+    call puts
+    mov al, 0x11
     mov dx, 0xf4
     out dx, al
     jmp silent_stop
@@ -126,8 +140,9 @@ puts:
 .done:
     ret
 greeting: db 'OSE1 BOOT real16', 10, 'OSE1 LOG level=info fixture', 10, 'OSE1 READY', 10, 0
-result: db 'OSE1 RESULT id=1 value=42', 10, 'OSE1 DONE', 10, 0
-wrong_exit: db 'OSE1 RESULT id=1 value=42', 10, 'OSE1 DONE', 10, 0
+result: db 'OSE1 RESULT id=1 value='
+digits: db '00', 10, 'OSE1 DONE', 10, 0
+invalid_msg: db 'OSE1 ERROR unsupported-command', 10, 0
 bad_result: db 'OSE1 RESULT id=1 value=41', 10, 'OSE1 DONE', 10, 0
 panic_msg: db 'OSE1 PANIC vector=6', 10, 0
 hang_msg: db 'OSE1 HANG', 10, 0

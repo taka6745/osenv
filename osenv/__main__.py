@@ -43,6 +43,9 @@ def parser():
     sub = p.add_subparsers(dest='operation', required=True)
     sub.add_parser('setup')
     sub.add_parser('doctor')
+    item = sub.add_parser('audit')
+    item.add_argument('--repo', default=str(ROOT))
+    item.add_argument('--os-only', action='store_true')
     item = sub.add_parser('build')
     item.add_argument('--fixture-mode', choices=['real16', 'protected32', 'long64'], default='real16')
     item = sub.add_parser('test')
@@ -138,6 +141,9 @@ def dispatch(a):
     if operation == 'setup':
         from .jobs import launch
         return launch('setup')
+    if operation == 'audit':
+        from .integrity import audit
+        return audit(a.repo, a.os_only)
     if operation == 'doctor':
         return doctor()
     if operation == 'build':

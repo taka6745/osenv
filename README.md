@@ -16,8 +16,8 @@ python3 -m osenv doctor
 python3 -m osenv test
 ```
 
-Python 3.12+; no Python runtime dependencies. Optionally install the console
-command with `python3 -m pip install -e .`. Operations use the current project
+Python 3.12+; standard library only, with no packaging or runtime dependencies.
+Use `python3 -m osenv` from this checkout. Operations use the current project
 directory, or `OSENV_ROOT`. Run fixture builds from this checkout or a project
 containing the fixture sources. `run --manual --image ...` can inspect another
 raw BIOS image without rebuilding it; pass its ELF with `--symbols`.
@@ -87,3 +87,8 @@ QMP and GDB behavior follow the upstream [QMP reference](https://www.qemu.org/do
 and [QEMU GDB documentation](https://www.qemu.org/docs/master/system/gdb.html).
 The small bounded transport uses Python's standard library. Existing QMP
 libraries were considered; no external guest code or driver was imported.
+
+[INTEGRITY.md](INTEGRITY.md) is mandatory. `python3 -m osenv audit --repo PATH`
+checks tracked source for external imports, dependency declarations and obvious
+placeholder bodies. The integration gate runs this audit too. Toolchain smoke
+checks live in `tools/check_toolchain.py`; they are host probes, not OS code.

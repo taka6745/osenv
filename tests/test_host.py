@@ -10,6 +10,31 @@ from osenv.protocol import verdict
 
 
 class HostTests(unittest.TestCase):
+    def test_integrity_rejects_deliberate_violations(self):
+        from osenv.integrity import inspect_source
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'candidate.py'
+            for source in ['import requests\n', 'def f():\n    pass\n',
+                           'def f():\n    ...\n', 'def f():\n    raise NotImplementedError\n']:
+                path.write_text(source)
+                self.assertTrue(inspect_source(path, set()), source)
+            path.write_text('import os\ndef f(value):\n    return value * 7\n')
+            self.assertEqual(inspect_source(path, set()), [])
+
+    def test_audit_rejects_dependencies_and_harness_in_os(self):
+        import subprocess
+        from osenv.integrity import audit
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(['git', 'init', '-q', directory], check=True, timeout=5)
+            (root / 'requirements.txt').write_text('requests\n')
+            self.assertFalse(audit(root)['ok'])
+            (root / 'requirements.txt').unlink()
+            (root / 'fixture').mkdir()
+            (root / 'fixture' / 'boot.asm').write_text('bits 16\nhlt\n')
+            self.assertFalse(audit(root, os_only=True)['ok'])
+            self.assertTrue(audit(root)['ok'])
+
     def test_protocol_rejects_false_success(self):
         good = b'OSE1 BOOT real16\nOSE1 READY\nOSE1 RESULT id=1 value=42\nOSE1 DONE\n'
         self.assertTrue(verdict(good, 33, [])['ok'])
