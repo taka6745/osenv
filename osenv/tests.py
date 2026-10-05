@@ -99,6 +99,15 @@ def integration():
         call(identity, {'operation': 'trace', 'events': 'guest_errors,int,cpu_reset'})
         call(identity, {'operation': 'debug', 'action': 'add-symbols', 'address': '0x7c00',
                         'symbols': str(get_run(identity) / 'boot.elf')})
+        try:
+            call(identity, {'operation': 'debug', 'action': 'breakpoint', 'address': 'definitely_absent_fixture_symbol'})
+            errors.append('Undefined breakpoint accepted')
+        except RuntimeError as error:
+            if 'not defined' not in str(error):
+                raise
+        cpu = call(identity, {'operation': 'qmp', 'command': 'query-status'})
+        if cpu['result']['running']:
+            errors.append('Failed breakpoint resumed CPU')
         result = call(identity, {'operation': 'debug', 'action': 'breakpoint', 'address': '0x7c00'})
         deadline = time.monotonic() + 8
         hit = False

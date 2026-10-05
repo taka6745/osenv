@@ -77,7 +77,10 @@ def stress(
     production=False,
     nic_rom=True,
     nic_model="e1000",
+    controlled_boot=False,
 ):
+    if controlled_boot and not production:
+        raise ValueError("Controlled boot requires production")
     if production and profile:
         raise ValueError("Production must not expose profiling")
     if not __debug__:
@@ -86,6 +89,7 @@ def stress(
     begun = time.monotonic()
     rid = start(
         timeout=600,
+        paused=controlled_boot,
         manual=True,
         image=image,
         symbols=symbols,
@@ -98,6 +102,7 @@ def stress(
     )["run_id"]
     run = get_run(rid)
     inputs = {
+        "controlled_boot": controlled_boot,
         "seed": seed,
         "requests": requests,
         "profile": profile,
@@ -111,6 +116,9 @@ def stress(
     samples = []
     phase_samples = []
     network_ready_seconds = None
+    resume_started = None
+    resume_to_response = None
+    controller_ready = None
     cases = []
     try:
         while not production and "OSL1 SERVING" not in (run / "serial.log").read_text():
@@ -122,6 +130,11 @@ def stress(
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
         assert call(rid, {"operation": "network-forward", "host_port": port})["ok"]
+
+        if controlled_boot:
+            controller_ready = time.monotonic() - begun
+            resume_started = time.monotonic()
+            assert call(rid, {"operation": "debug", "action": "resume"})["ok"]
 
         def serial(text, marker):
             before = (run / "serial.log").stat().st_size
@@ -188,7 +201,10 @@ def stress(
             # Abandoning repeated 100ms clients left delayed NAT SYN retries
             # competing with the load on the OS's single connection slot.
             expected, _ = fetch(root, timeout=max(0.001, deadline - time.monotonic()))
-            boot_seconds = time.monotonic() - begun
+            finished_boot = time.monotonic()
+            boot_seconds = finished_boot - begun
+            if resume_started is not None:
+                resume_to_response = finished_boot - resume_started
             assert call(
                 rid,
                 {
@@ -293,6 +309,8 @@ def stress(
             "run_id": rid,
             **inputs,
             "boot_seconds": boot_seconds,
+            "controller_ready_seconds": controller_ready,
+            "resume_call_to_first_response_seconds": resume_to_response,
             "launch_to_captured_DHCP_ACK_seconds": network_ready_seconds,
             "image_sha256": hashlib.sha256(Path(image).read_bytes()).hexdigest(),
             "response_sha256": hashlib.sha256(expected).hexdigest(),
@@ -356,6 +374,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0x5EED)
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--production", action="store_true")
+    parser.add_argument("--controlled-boot", action="store_true")
     parser.add_argument("--no-nic-rom", dest="nic_rom", action="store_false")
     parser.add_argument("--nic-model", choices=["e1000", "e1000e"], default="e1000")
     parser.add_argument("--timing", choices=("virtual", "realtime"), default="realtime")

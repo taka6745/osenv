@@ -68,3 +68,19 @@ boot/fault/recovery and decoder gates passed; harness 18 gates, 15 unit tests,
 source audits and deliberate copy/checksum mutants passed. Optional plugin SDK
 is host-only; default controller needs no new dependency. Graphs/raw data remain
 local outside oslab. No physical cycle/cache or homelab completion claim.
+
+T018 — Goal: reproducible reset-to-serving and repeated performance comparisons.
+Interface: controlled paused boot with forwarding prepared before resume; benchmark CLI.
+Prerequisites: real production disk/ELF, pinned QEMU, independent HTTP verification.
+Acceptance: repeated actual boots/load, explicit measurement scopes, unit/controller gates.
+Provenance: existing authored stress controller; Cloudflare startup documentation.
+
+Result: controlled reset-to-HTTP median 73.4 ms on supported 82574/no PXE ROM,
+full controller launch ~550 ms; QMP kernel/DHCP milestones 61.6/64.4 ms.
+Matched comparisons rejected checksum caching and a larger polling budget.
+Fixed failed breakpoint insertion so it cannot resume the CPU; following valid
+breakpoints no longer inherit stale MI errors. Actual query-status verifies
+paused-on-failure; the live debugger gate now covers failure then valid recovery.
+Real repeated HTTP comparison, successful probes and missing-symbol failure,
+18 controller gates, 21 unit tests and audits passed. Guest bytes unchanged;
+no Cloudflare-equivalent or physical-board performance claim.

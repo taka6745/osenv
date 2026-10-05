@@ -244,9 +244,14 @@ class Owner:
                 except ValueError:
                     if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_:]*', address or ''):
                         raise ValueError('Breakpoint needs an address or symbol name')
-                self.breakpoints.run(['-break-insert ' + json.dumps(address)])
+                begin = len(self.breakpoints.transcript)
+                inserted = self.breakpoints.run(['-break-insert ' + json.dumps(address)])
+                if not inserted['ok']:
+                    (self.run / 'breakpoints.mi').write_text(inserted['stdout'])
+                    raise RuntimeError(inserted['error'])
                 self.breakpoints.send('-exec-continue')
-                transcript = self.breakpoints.collect(1)
+                self.breakpoints.collect(1)
+                transcript = self.breakpoints.transcript[begin:].decode(errors='replace')
                 (self.run / 'breakpoints.mi').write_text(transcript)
                 if '^error' in transcript:
                     raise RuntimeError(transcript)

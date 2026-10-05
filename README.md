@@ -154,3 +154,28 @@ Saved reproduction/recovery preserves model, timing and ROM configuration.
 
 Optional [host instruction profiling](tools/instruction_profile.md) counts real
 QEMU dispatches by ELF symbol; it adds no guest code and is separate from speed tests.
+
+Repeated production boot/load comparisons (no guest markers needed):
+
+```sh
+python3 -m osenv.perf_bench --image build/oslab-prod/oslab.img --symbols build/oslab-prod/kernel.elf --output local/perf-new --repeat 3 --requests 5000 --nic-model e1000e --no-nic-rom
+# Add --compare-image OLD.img --compare-symbols OLD.elf for alternating matched runs.
+```
+
+The controller prepares forwarding while paused, then measures resume-call to
+first verified HTTP response separately from full controller launch. Both include
+real BIOS/disk boot and DHCP; reset timing also includes the control RPC and DHCP
+capture polling (10 ms resolution). Every repetition retains its inputs, hashes,
+per-request timings, captures and boundary-test verdict. Output directories must
+be new; failed runs cannot become successful aggregate reports.
+
+Measure a named boot milestone without adding guest instrumentation:
+
+```sh
+python3 -m osenv.boot_probe --image build/oslab-prod/oslab.img --symbols build/oslab-prod/kernel.elf --breakpoint kernel_main
+# Repeat with --breakpoint dhcp_send to include kernel/NIC initialization.
+```
+
+This probe uses actual QMP RESUME/STOP timestamps and a GDB breakpoint. It reports
+its scope separately from launch/debugger preparation and preserves a stopped
+machine capture. A milestone is not an HTTP-readiness result.
