@@ -93,3 +93,35 @@ p99 210–242 µs. Real loss/window/wrap/checksum and five-frame wire gates pass
 Machine configuration is recorded and preserved by reproduce/recover. External
 18 controller gates, 22 unit tests and source audits passed. Physical timing
 and a matched Cloudflare comparison remain unverified.
+
+T019 — Goal: measure unconventional cold entry and independently verified restore.
+Interface: hash-bound optional PVH/qboot loader, paused snapshots, clock probe,
+peer setup before resume and packet-capture serving intervals.
+Prerequisites: authored real OS/ELF/provenance, pinned firmware/emulator, T018 gates.
+Acceptance: native loader/HTTP, actual RAM restore/body equality, lost-tick mutant,
+failed/tampered loader rejection, reproduction, full controller and source gates.
+Provenance: QEMU snapshots/generic loader, Xen PVH, Intel HPET; no external source.
+Result: four alternating three-run variants verified 120,000 actual responses
+using the same final production disk hash. BIOS median resume-to-HTTP 59.23 ms;
+PVH 21.52 ms in that comparison. A second matched comparison measured PVH
+20.26 ms versus preload 20.05 ms, with throughput ratio 0.9985; preload has no
+established material advantage. These include RPC and 1 ms DHCP observation.
+Controller launch remains 462–519 ms for PVH; steady full-client median ~145 µs,
+captured request-to-response median 20–21 µs. Snapshot restoration independently
+restored mutated RAM and exact HTTP in five runs: load 6.08–6.86 ms, checked
+restore through HTTP 10.58–11.21 ms. The <1 ms goal remains unmet.
+Real lost-tick clock check recovered to HPET with zero observed lag; deliberate
+sampling defect lagged 535 ms and failed with full capture. Peer launch now
+connects before CPU resume, exposing rather than hiding fast-entry races.
+All 18 controller checks (including actual snapshot RAM restoration), 30 unit tests,
+source audits and nine actual loader boundary cases per variant passed.
+Production wire gates passed for BIOS/e1000, BIOS/e1000e, PVH and preload.
+Measurements and raw evidence are retained under local/t019. Alternate entry, full BIOS boot, capture service
+time and warm restoration have distinct scopes. No homelab/physical-cycle claim.
+
+Exact default 16 KiB production image separately passed 30,000 verified responses:
+6671 requests/s, 59.77 ms median reset-to-HTTP, 136–140 µs warm medians and
+19 µs captured service median. Saved preload reproduction preserved all hashes
+and returned actual HTTP.
+HPET-absent production wire gate passed with retained experimental wrapper/actual
+QEMU argv; fallback retains PIT missed-tick limitations.

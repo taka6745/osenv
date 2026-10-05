@@ -3,13 +3,14 @@
 import argparse
 import json
 import time
+import traceback
 from pathlib import Path
 from .worker import start
 from .core import get_run
 from .__main__ import call
 
 
-def test(image, symbols, nic_model="e1000"):
+def test(image, symbols, nic_model="e1000", boot_kernel=None, minimal_devices=False):
     if not __debug__:
         raise RuntimeError("Acceptance requires Python assertions enabled")
     rid = start(
@@ -21,6 +22,8 @@ def test(image, symbols, nic_model="e1000"):
         memory=64,
         network="isolated",
         nic_model=nic_model,
+        boot_kernel=boot_kernel,
+        minimal_devices=minimal_devices,
     )["run_id"]
     run = get_run(rid)
     result = {"ok": False, "run_id": rid}
@@ -57,7 +60,9 @@ def test(image, symbols, nic_model="e1000"):
                     "address": "nic_interrupt",
                 },
             )
-            assert r["ok"] and "nic_interrupt" in r["mi"], r
+            assert (
+                r["ok"] and "breakpoint-hit" in r["mi"] and "nic_interrupt" in r["mi"]
+            ), r
             # The ISR receives the actual delivered PIC line, not a guest PASS.
             assert evaluate("$rdi") == irq
             call(rid, {"operation": "debug", "action": "delete-breakpoints"})
@@ -72,6 +77,7 @@ def test(image, symbols, nic_model="e1000"):
             "scope": "actual emulated device ICS -> PIC -> guest ISR -> ICR clear, rearmed twice",
         }
     except Exception as error:
+        (run / "irq-failure.txt").write_text(traceback.format_exc())
         result["error"] = str(error) or type(error).__name__
     finally:
         result["capture"] = call(rid, {"operation": "capture", "mode": "long64"})
@@ -85,6 +91,8 @@ if __name__ == "__main__":
     parser.add_argument("--image", required=True)
     parser.add_argument("--symbols", required=True)
     parser.add_argument("--nic-model", choices=["e1000", "e1000e"], default="e1000")
+    parser.add_argument("--boot-kernel")
+    parser.add_argument("--minimal-devices", action="store_true")
     args = parser.parse_args()
     result = test(**vars(args))
     print(json.dumps(result, indent=2))

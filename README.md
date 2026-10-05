@@ -164,8 +164,8 @@ python3 -m osenv.perf_bench --image build/oslab-prod/oslab.img --symbols build/o
 
 The controller prepares forwarding while paused, then measures resume-call to
 first verified HTTP response separately from full controller launch. Both include
-real BIOS/disk boot and DHCP; reset timing also includes the control RPC and DHCP
-capture polling (10 ms resolution). Every repetition retains its inputs, hashes,
+the selected boot route and DHCP; reset timing also includes the control RPC and DHCP
+capture polling (1 ms resolution in controlled boot comparisons). Every repetition retains its inputs, hashes,
 per-request timings, captures and boundary-test verdict. Output directories must
 be new; failed runs cannot become successful aggregate reports.
 
@@ -185,3 +185,31 @@ for a headless server: it disables unused default devices and VGA while retainin
 explicit disk, UART/debug-exit, QMP/GDB and NIC devices. This is an optional,
 recorded machine configuration, not a change to guest code or firmware timers.
 Reproduce/recover preserve it. Fixtures and floppy boot do not support this mode.
+
+Optional authored PVH entry uses `--boot-kernel BUILD/pvh.elf` in `run`,
+`web-test`, `web_stress`, `perf_bench` and `boot_probe`. The adjacent
+`pvh-inputs.json` must hash the supplied loader, complete disk image and symbols.
+Preload builds also require their hashed `kernel.bin`; QEMU loads it without
+changing the CPU entry point. Installed `qboot.rom` is mandatory and hashed.
+The recorded routes are `bios-disk`, `pvh-qboot` and `pvh-qboot-preload`.
+PVH bypasses the BIOS disk chain; the complete disk acceptance gate remains required.
+Reproduce/recover retain and revalidate these inputs. For alternating comparisons,
+pair `--compare-image`/`--compare-symbols` with optional `--compare-boot-kernel`;
+omitting that last flag selects BIOS for the comparison image.
+
+```sh
+python3 -m osenv.restore_probe --image BUILD/oslab.img --symbols BUILD/kernel.elf --repeat 5
+python3 -m osenv.clock_probe --image DEBUG/oslab.img --symbols DEBUG/kernel.elf
+python3 -m osenv.pvh_test --image DEBUG/oslab.img --symbols DEBUG/kernel.elf --boot-kernel DEBUG/pvh.elf --report local/pvh-boundaries.json
+```
+
+`restore_probe` saves paused QCOW2 state, deliberately changes real RAM, then
+requires restored bytes and an exact complete response from an independent HTTP
+client. The owner's bounded snapshot operation accepts only paused save/load and
+validated tags; raw results and hashes remain in each run. This measures warm
+restoration, including control/client costs, rather than cold boot.
+`clock_probe` checks HPET-derived time after forced lost software ticks;
+`--defect` must fail. `pvh_test` injects malformed inputs into the real authored
+adapter and verifies halt addresses, memory boundaries and actual copies.
+Packet service intervals report capture request-to-response time separately from
+full client latency. None establishes physical cycles or homelab completion.

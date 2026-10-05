@@ -26,7 +26,13 @@ def interval(events):
 
 
 def probe(
-    image, symbols, breakpoint, nic_model="e1000e", nic_rom=False, minimal_devices=False
+    image,
+    symbols,
+    breakpoint,
+    nic_model="e1000e",
+    nic_rom=False,
+    minimal_devices=False,
+    boot_kernel=None,
 ):
     if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*|0x[0-9a-fA-F]+", breakpoint):
         raise ValueError("Expected a symbol or hexadecimal address")
@@ -43,6 +49,7 @@ def probe(
         timing="realtime",
         nic_model=nic_model,
         minimal_devices=minimal_devices,
+        boot_kernel=boot_kernel,
         nic_rom=nic_rom,
     )["run_id"]
     run = get_run(rid)
@@ -62,7 +69,13 @@ def probe(
             "breakpoint": breakpoint,
             "reset_resume_to_breakpoint_seconds": interval(events),
             "launch_with_debugger_to_breakpoint_seconds": time.monotonic() - begun,
-            "scope": "Real BIOS/disk boot to requested symbol; QMP RESUME/STOP; excludes host preparation. Not HTTP readiness or physical cycles.",
+            "boot_route": json.loads((run / "manifest.json").read_text())["machine"][
+                "boot_route"
+            ],
+            "scope": (
+                "Authored PVH/qboot entry" if boot_kernel else "Real BIOS/disk boot"
+            )
+            + " to requested symbol; QMP RESUME/STOP; excludes host preparation. Not HTTP readiness or physical cycles.",
         }
     except Exception as e:
         result = {
@@ -96,6 +109,7 @@ def main():
     p.add_argument("--nic-model", choices=["e1000", "e1000e"], default="e1000e")
     p.add_argument("--nic-rom", action="store_true")
     p.add_argument("--minimal-devices", action="store_true")
+    p.add_argument("--boot-kernel")
     a = p.parse_args()
     r = probe(**vars(a))
     print(json.dumps(r, indent=2))

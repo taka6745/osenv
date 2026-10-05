@@ -79,6 +79,7 @@ def stress(
     nic_model="e1000",
     controlled_boot=False,
     minimal_devices=False,
+    boot_kernel=None,
 ):
     if controlled_boot and not production:
         raise ValueError("Controlled boot requires production")
@@ -92,6 +93,7 @@ def stress(
         timeout=600,
         paused=controlled_boot,
         minimal_devices=minimal_devices,
+        boot_kernel=boot_kernel,
         manual=True,
         image=image,
         symbols=symbols,
@@ -104,8 +106,12 @@ def stress(
     )["run_id"]
     run = get_run(rid)
     inputs = {
+        "readiness_poll_seconds": 0.001 if controlled_boot else 0.01,
         "controlled_boot": controlled_boot,
         "minimal_devices": minimal_devices,
+        "boot_route": json.loads((run / "manifest.json").read_text())["machine"][
+            "boot_route"
+        ],
         "seed": seed,
         "requests": requests,
         "profile": profile,
@@ -198,7 +204,7 @@ def stress(
             while not dhcp_ack_seen(run / "network.pcap"):
                 if time.monotonic() >= deadline:
                     raise TimeoutError("No captured DHCP ACK before HTTP readiness")
-                time.sleep(0.01)
+                time.sleep(inputs["readiness_poll_seconds"])
             network_ready_seconds = time.monotonic() - begun
             # One real readiness request, with the original overall deadline.
             # Abandoning repeated 100ms clients left delayed NAT SYN retries
@@ -379,6 +385,7 @@ if __name__ == "__main__":
     parser.add_argument("--production", action="store_true")
     parser.add_argument("--controlled-boot", action="store_true")
     parser.add_argument("--minimal-devices", action="store_true")
+    parser.add_argument("--boot-kernel")
     parser.add_argument("--no-nic-rom", dest="nic_rom", action="store_false")
     parser.add_argument("--nic-model", choices=["e1000", "e1000e"], default="e1000")
     parser.add_argument("--timing", choices=("virtual", "realtime"), default="realtime")

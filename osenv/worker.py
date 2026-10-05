@@ -2,10 +2,12 @@
 import json
 import fcntl
 import os
+import re
 from pathlib import Path
 import selectors
 import shutil
 import socket
+import struct
 import subprocess
 import time
 import uuid
@@ -29,8 +31,69 @@ class EventLog(list):
             stream.write(json.dumps(event) + '\n')
 
 
+def validate_pvh(kernel, image, symbols):
+    kernel = Path(kernel).resolve()
+    provenance = kernel.parent / 'pvh-inputs.json'
+    if not kernel.is_file() or not 52 <= kernel.stat().st_size <= 1024*1024:
+        raise ValueError('PVH kernel must be an ELF32 file bounded to 1 MiB')
+    raw = kernel.read_bytes()
+    if raw[:7] != b'\x7fELF\x01\x01\x01' or struct.unpack_from('<HHI', raw, 16) != (2, 3, 1):
+        raise ValueError('PVH requires a little-endian i386 executable ELF32')
+    offset = struct.unpack_from('<I', raw, 28)[0]
+    size, count = struct.unpack_from('<HH', raw, 42)
+    if size != 32 or not 1 <= count <= 64 or offset+size*count > len(raw):
+        raise ValueError('Invalid bounded PVH program header table')
+    found = False
+    for index in range(count):
+        kind, start, _, _, length = struct.unpack_from('<IIIII', raw, offset+index*size)
+        if start+length > len(raw):
+            raise ValueError('Truncated PVH segment')
+        if kind != 4:
+            continue
+        end = start+length
+        while start < end:
+            if start+12 > end:
+                raise ValueError('Truncated PVH note')
+            names, values, note_type = struct.unpack_from('<III', raw, start)
+            name_at = start+12
+            value_at = name_at+((names+3)&~3)
+            next_at = value_at+((values+3)&~3)
+            if next_at > end:
+                raise ValueError('PVH note exceeds segment')
+            if note_type == 18 and names == 4 and values == 4 and raw[name_at:name_at+4] == b'Xen\0':
+                found = True
+            start = next_at
+    if not found:
+        raise ValueError('Missing Xen PHYS32_ENTRY note')
+    if not provenance.is_file() or provenance.stat().st_size > 1024*1024:
+        raise ValueError('Missing or excessive PVH provenance')
+    record = load(provenance)
+    preload = record.get('preload', False)
+    if type(preload) is not bool:
+        raise ValueError('PVH preload metadata must be a boolean')
+    expected = record.get('generated_artifacts', {})
+    for name, path in [('pvh.elf', kernel), ('oslab.img', image), ('kernel.elf', symbols)]:
+        if not path or expected.get(name) != digest(path):
+            raise ValueError('PVH artifact hash mismatch: ' + name)
+    if preload:
+        payload = kernel.parent / 'kernel.bin'
+        if not payload.is_file() or not 0 < payload.stat().st_size <= 524288:
+            raise ValueError('PVH preload kernel.bin must be 1..524288 bytes')
+        if expected.get('kernel.bin') != digest(payload):
+            raise ValueError('PVH artifact hash mismatch: kernel.bin')
+    return kernel, provenance
+
+
+def pvh_firmware():
+    prefix = Path(tool('qemu-system-x86_64')).resolve().parent.parent
+    for candidate in [prefix / 'share/qemu/qboot.rom', Path('/usr/share/qemu/qboot.rom')]:
+        if candidate.is_file():
+            return candidate
+    raise ValueError('PVH requires the installed QEMU qboot.rom firmware')
+
+
 def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=None,
-          manual=False, symbols=None, mode='real16', memory=32, network='none', disk_interface=None, timing='virtual', nic_rom=True, nic_model='e1000', minimal_devices=False):
+          manual=False, symbols=None, mode='real16', memory=32, network='none', disk_interface=None, timing='virtual', nic_rom=True, nic_model='e1000', minimal_devices=False, boot_kernel=None):
     if type(minimal_devices) is not bool or (minimal_devices and not manual):
         raise ValueError('Minimal devices require a manual OS image and a boolean flag')
     if nic_model not in ['e1000', 'e1000e']:
@@ -53,6 +116,21 @@ def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=N
     if disk_interface not in ['ide', 'floppy']:
         raise ValueError('Disk interface must be ide or floppy')
     validate_image(image, fixture=not manual)
+    preload = False
+    if boot_kernel:
+        if not manual or mode != 'long64' or disk_interface != 'ide':
+            raise ValueError('PVH requires manual long64 mode and the retained IDE image')
+        boot_kernel, provenance = validate_pvh(boot_kernel, image,
+            symbols or (directory / 'boot.elf' if directory else None))
+        preload = load(provenance).get('preload', False)
+        if directory:
+            saved = load(directory / 'manifest.json')
+            if (saved.get('boot_kernel_sha256') != digest(boot_kernel) or
+                    saved.get('boot_provenance_sha256') != digest(provenance)):
+                raise ValueError('Saved PVH loader/provenance hash mismatch')
+            if preload and saved.get('preload_kernel_sha256') != digest(boot_kernel.parent / 'kernel.bin'):
+                raise ValueError('Saved PVH preload payload hash mismatch')
+        pvh_firmware()
     identity = str(uuid.uuid4())
     run = ROOT / 'runs' / identity
     run.mkdir(parents=True, mode=0o700)
@@ -65,6 +143,11 @@ def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=N
     if symbols:
         shutil.copyfile(symbols, run / 'boot.elf')
     shutil.copyfile(image, run / 'disk.img')
+    if boot_kernel:
+        shutil.copyfile(boot_kernel, run / 'pvh.elf')
+        shutil.copyfile(provenance, run / 'pvh-inputs.json')
+        if preload:
+            shutil.copyfile(boot_kernel.parent / 'kernel.bin', run / 'kernel.bin')
     # Short random /tmp sockets avoid macOS's 104-byte UNIX path limit.
     sockets = Path('/tmp') / ('ose-' + identity[:8])
     sockets.mkdir(mode=0o700)
@@ -73,10 +156,14 @@ def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=N
              'fixture': False, 'files': {'image': digest(image)},
              'symbols': {'mode': mode, 'elf_sha256': digest(symbols) if symbols else None}},
          'image_sha256': digest(run / 'disk.img'),
+         'boot_kernel_sha256': digest(run / 'pvh.elf') if boot_kernel else None,
+         'boot_provenance_sha256': digest(run / 'pvh-inputs.json') if boot_kernel else None,
+         'preload_kernel_sha256': digest(run / 'kernel.bin') if preload else None,
          'input': {'scenario': scenario, 'command': '1' + SCENARIOS[scenario] + '\n',
                    'seed': 7, 'expected_value': 42, 'timeout': timeout, 'paused': paused,
                    'manual': manual, 'mode': mode, 'memory_mib': memory, 'network': network,
-                   'disk_interface': disk_interface, 'timing': timing, 'nic_rom': nic_rom, 'nic_model': nic_model, 'minimal_devices': minimal_devices},
+                   'disk_interface': disk_interface, 'timing': timing, 'nic_rom': nic_rom, 'nic_model': nic_model, 'minimal_devices': minimal_devices,
+                   'boot_route': 'pvh' if boot_kernel else 'bios', 'preload': preload},
          'socket_directory': str(sockets), 'source_hashes':
          {'osenv/' + p.name: digest(p) for p in sorted(Path(__file__).parent.glob('*.py'))}})
     for name in ['serial.log', 'early.log', 'qemu.log', 'trace.log', 'events.jsonl', 'annotations.jsonl', 'actions.jsonl']:
@@ -138,6 +225,10 @@ class Owner:
         try:
             self.qmp.call('stop')
             save(target / 'qmp-status.json', self.qmp.call('query-status'))
+            save(target / 'hardware.json', {
+                'pci': self.qmp.call('query-pci'),
+                **{name: self.qmp.call('human-monitor-command', {'command-line': 'info ' + name})
+                   for name in ['pic', 'irq']}})
         except Exception as error:
             errors.append(f'QMP stop/status: {error}')
         if self.breakpoints:
@@ -241,7 +332,6 @@ class Owner:
             if action == 'breakpoint':
                 if not self.breakpoints:
                     self.breakpoints = Debugger(self.sockets / 'gdb', self.run / 'boot.elf')
-                import re
                 address = request['address']
                 try:
                     address = f'*{int(str(address), 0):#x}'
@@ -286,6 +376,12 @@ class Owner:
             return {'ok': True, 'up': request['up']}
         if operation == 'inspect':
             results = {}
+            for name in ['pic', 'irq']:
+                try:
+                    results['info-' + name] = self.qmp.call('human-monitor-command',
+                        {'command-line': 'info ' + name})
+                except RuntimeError as error:
+                    results['info-' + name] = {'unsupported': str(error)}
             for name in ['query-status', 'query-cpus-fast', 'query-pci', 'query-block',
                          'query-blockstats', 'query-chardev', 'query-memory-size-summary', 'query-iothreads']:
                 try:
@@ -316,6 +412,29 @@ class Owner:
             save(self.run / 'forward.json', {'host': '127.0.0.1', 'host_port': host_port,
                                            'guest_port': guest_port})
             return {'ok': True, 'host': '127.0.0.1', 'host_port': host_port, 'guest_port': guest_port}
+        if operation == 'snapshot':
+            action, tag = request.get('action'), request.get('tag', '')
+            if action not in ['save', 'load'] or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,47}', tag):
+                raise ValueError('Snapshot requires save/load and a bounded alphanumeric tag')
+            if self.qmp.call('query-status')['running']:
+                raise ValueError('Pause the VM before saving or loading a snapshot')
+            begun = time.monotonic()
+            try:
+                raw = self.qmp.call('human-monitor-command', {'command-line': f'{action}vm {tag}'})
+            finally:
+                self.qmp.call('stop')
+                self.state = 'paused'
+            snapshot_result = {
+                'action': action, 'tag': tag, 'raw_result': raw,
+                'seconds': time.monotonic()-begun,
+                'image_sha256': digest(self.run / 'disk.img'),
+                'symbols_sha256': digest(self.run / 'boot.elf')}
+            with (self.run / 'snapshot-results.jsonl').open('a') as stream:
+                stream.write(json.dumps(snapshot_result) + '\n')
+            if raw:
+                raise RuntimeError('Snapshot failed: ' + raw)
+            return {'ok': True, 'state': 'paused', 'raw_result': raw,
+                    'seconds': time.monotonic()-begun}
         if operation == 'qmp':
             name = request['command']
             if not name.startswith('query-') and name not in ['trace-event-get-state', 'trace-event-set-state']:
@@ -389,7 +508,22 @@ class Owner:
                 self.manifest['input'].get('timing') == 'realtime'):
             at = config.index('-icount')
             del config[at:at+2]
-        firmware = Path(tool('qemu-system-x86_64')).resolve().parent.parent / 'share/qemu/bios-256k.bin'
+        pvh = self.manifest['input'].get('boot_route', 'bios') == 'pvh'
+        preload = False
+        if pvh:
+            if (digest(self.run / 'pvh.elf') != self.manifest['boot_kernel_sha256'] or
+                    digest(self.run / 'pvh-inputs.json') != self.manifest['boot_provenance_sha256']):
+                raise ValueError('Saved PVH loader/provenance hash mismatch')
+            validate_pvh(self.run / 'pvh.elf', self.run / 'disk.img', self.run / 'boot.elf')
+            preload = load(self.run / 'pvh-inputs.json').get('preload', False)
+            if preload != self.manifest['input'].get('preload', False):
+                raise ValueError('Saved PVH preload flag changed')
+            config += ['-kernel', str(self.run / 'pvh.elf')]
+            if preload:
+                if digest(self.run / 'kernel.bin') != self.manifest['preload_kernel_sha256']:
+                    raise ValueError('Saved PVH preload payload hash mismatch')
+                config += ['-device', f'loader,file={self.run / "kernel.bin"},addr=0x100000,force-raw=on']
+        firmware = pvh_firmware() if pvh else Path(tool('qemu-system-x86_64')).resolve().parent.parent / 'share/qemu/bios-256k.bin'
         if not firmware.exists():
             for candidate in [Path('/usr/share/qemu/bios-256k.bin'), Path('/usr/share/seabios/bios-256k.bin')]:
                 if candidate.exists():
@@ -403,6 +537,7 @@ class Owner:
         self.manifest['machine'] = {'type': MACHINE, 'cpu': 'qemu64', 'ram_mib': self.manifest['input']['memory_mib'],
                                     'acceleration': 'tcg', 'cpus': 1, 'network': self.manifest['input']['network'],
                                     'rtc': '2000-01-01T00:00:00', 'record_replay': False,
+                                    'boot_route': ('pvh-qboot-preload' if preload else 'pvh-qboot') if pvh else 'bios-disk',
                                     'timing': self.manifest['input'].get('timing', 'virtual')}
         self.manifest['qemu_argv'] = [tool('qemu-system-x86_64')] + config
         save(self.run / 'manifest.json', self.manifest)

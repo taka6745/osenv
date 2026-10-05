@@ -7,11 +7,12 @@ from osenv.core import get_run
 from osenv.__main__ import call
 
 
-def web_test(image, symbols, production=False, nic_model="e1000", minimal_devices=False):
+def web_test(image, symbols, production=False, nic_model="e1000", minimal_devices=False, boot_kernel=None):
     if not __debug__:
         raise RuntimeError("Acceptance checks require Python assertions enabled")
     r = start(
         timeout=60,
+        paused=True,
         manual=True,
         image=image,
         symbols=symbols,
@@ -20,6 +21,7 @@ def web_test(image, symbols, production=False, nic_model="e1000", minimal_device
         network="peer",
         nic_model=nic_model,
         minimal_devices=minimal_devices,
+        boot_kernel=boot_kernel,
     )
     rid = r["run_id"]
     try:
@@ -230,6 +232,9 @@ def _exercise_peer(rid, production):
         ip_send(6, h)
 
     # Let our DHCP peer configure the real guest, then establish TCP with a tiny MSS.
+    resumed = call(rid, {"operation": "debug", "action": "resume"})
+    if not resumed.get("ok"):
+        raise RuntimeError("Could not resume after connecting the external peer")
     while (
         not ack_sent
         if production
@@ -424,6 +429,7 @@ def _exercise_peer(rid, production):
         for line in (run / "events.jsonl").read_text().splitlines()
     )
     verdict["production"] = production
+    verdict["boot_route"] = json.loads((run / "manifest.json").read_text())["machine"]["boot_route"]
     verdict["termination"] = "external-stop" if production else "guest-debug-exit"
     verdict["image_sha256"] = json.loads((run / "manifest.json").read_text())[
         "image_sha256"

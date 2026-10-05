@@ -90,6 +90,25 @@ def integration():
         physical = call(identity, {'operation': 'physical-memory', 'address': '0x500', 'length': 4})
         if physical['hex'] != 'cafebabe':
             errors.append('Physical read mismatch')
+        for request in [{'operation': 'snapshot', 'action': 'save', 'tag': 'bad;tag'},
+                        {'operation': 'snapshot', 'action': 'load', 'tag': 'absent'}]:
+            try:
+                call(identity, request)
+                errors.append('Invalid/missing snapshot accepted')
+            except RuntimeError:
+                pass
+        if call(identity, {'operation': 'qmp', 'command': 'query-status'})['result']['running']:
+            errors.append('Failed snapshot resumed CPU')
+        call(identity, {'operation': 'snapshot', 'action': 'save', 'tag': 'regression'})
+        call(identity, {'operation': 'debug', 'action': 'write-memory',
+                        'address': '0x500', 'value': '01020304'})
+        changed = call(identity, {'operation': 'physical-memory', 'address': '0x500', 'length': 4})
+        if changed['hex'] != '01020304':
+            errors.append('Snapshot mutation did not occur')
+        call(identity, {'operation': 'snapshot', 'action': 'load', 'tag': 'regression'})
+        restored = call(identity, {'operation': 'physical-memory', 'address': '0x500', 'length': 4})
+        if restored['hex'] != 'cafebabe':
+            errors.append('Snapshot did not restore actual RAM')
         inspected = call(identity, {'operation': 'inspect'})
         if not inspected['results']['query-cpus-fast']:
             errors.append('Missing CPU inspection')
