@@ -7,7 +7,7 @@ from osenv.core import get_run
 from osenv.__main__ import call
 
 
-def web_test(image, symbols, production=False, nic_model="e1000"):
+def web_test(image, symbols, production=False, nic_model="e1000", minimal_devices=False):
     if not __debug__:
         raise RuntimeError("Acceptance checks require Python assertions enabled")
     r = start(
@@ -19,6 +19,7 @@ def web_test(image, symbols, production=False, nic_model="e1000"):
         memory=64,
         network="peer",
         nic_model=nic_model,
+        minimal_devices=minimal_devices,
     )
     rid = r["run_id"]
     try:

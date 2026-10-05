@@ -25,7 +25,9 @@ def interval(events):
     return stamp(stop) - stamp(resume)
 
 
-def probe(image, symbols, breakpoint, nic_model="e1000e", nic_rom=False):
+def probe(
+    image, symbols, breakpoint, nic_model="e1000e", nic_rom=False, minimal_devices=False
+):
     if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*|0x[0-9a-fA-F]+", breakpoint):
         raise ValueError("Expected a symbol or hexadecimal address")
     begun = time.monotonic()
@@ -40,6 +42,7 @@ def probe(image, symbols, breakpoint, nic_model="e1000e", nic_rom=False):
         network="isolated",
         timing="realtime",
         nic_model=nic_model,
+        minimal_devices=minimal_devices,
         nic_rom=nic_rom,
     )["run_id"]
     run = get_run(rid)
@@ -92,6 +95,7 @@ def main():
     p.add_argument("--breakpoint", default="kernel_main")
     p.add_argument("--nic-model", choices=["e1000", "e1000e"], default="e1000e")
     p.add_argument("--nic-rom", action="store_true")
+    p.add_argument("--minimal-devices", action="store_true")
     a = p.parse_args()
     r = probe(**vars(a))
     print(json.dumps(r, indent=2))

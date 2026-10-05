@@ -84,3 +84,12 @@ paused-on-failure; the live debugger gate now covers failure then valid recovery
 Real repeated HTTP comparison, successful probes and missing-symbol failure,
 18 controller gates, 21 unit tests and audits passed. Guest bytes unchanged;
 no Cloudflare-equivalent or physical-board performance claim.
+
+Headless machine follow-up: explicit external minimal-devices mode removes unused
+default devices/VGA. Same complete BIOS/disk/DHCP path and exact guest image:
+three native runs, 15,000 verified responses; reset-to-HTTP 58.7–60.9 ms,
+full controller launch 524–545 ms, 6369 requests/s, median 147–149 µs,
+p99 210–242 µs. Real loss/window/wrap/checksum and five-frame wire gates passed.
+Machine configuration is recorded and preserved by reproduce/recover. External
+18 controller gates, 22 unit tests and source audits passed. Physical timing
+and a matched Cloudflare comparison remain unverified.

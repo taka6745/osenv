@@ -179,3 +179,9 @@ python3 -m osenv.boot_probe --image build/oslab-prod/oslab.img --symbols build/o
 This probe uses actual QMP RESUME/STOP timestamps and a GDB breakpoint. It reports
 its scope separately from launch/debugger preparation and preserves a stopped
 machine capture. A milestone is not an HTTP-readiness result.
+
+Add `--minimal-devices` to perf_bench, boot_probe, web-test or manual IDE runs
+for a headless server: it disables unused default devices and VGA while retaining
+explicit disk, UART/debug-exit, QMP/GDB and NIC devices. This is an optional,
+recorded machine configuration, not a change to guest code or firmware timers.
+Reproduce/recover preserve it. Fixtures and floppy boot do not support this mode.

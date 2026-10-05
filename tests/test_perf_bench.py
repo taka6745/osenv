@@ -1,6 +1,7 @@
 import unittest
 from osenv.perf_bench import summarize
 from osenv.web_stress import stress
+from osenv.worker import start
 
 
 class PerformanceReportTests(unittest.TestCase):
@@ -31,6 +32,12 @@ class PerformanceReportTests(unittest.TestCase):
                 summarize([self.sample(), b])
         with self.assertRaises(ValueError):
             summarize([])
+
+    def test_minimal_fixture_rejected_before_build(self):
+        with self.assertRaises(ValueError):
+            start(minimal_devices=True)
+        with self.assertRaises(ValueError):
+            start(manual=True, minimal_devices="true")
 
     def test_controlled_debug_rejected_before_launch(self):
         with self.assertRaises(ValueError):

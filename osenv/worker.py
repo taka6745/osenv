@@ -30,7 +30,9 @@ class EventLog(list):
 
 
 def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=None,
-          manual=False, symbols=None, mode='real16', memory=32, network='none', disk_interface=None, timing='virtual', nic_rom=True, nic_model='e1000'):
+          manual=False, symbols=None, mode='real16', memory=32, network='none', disk_interface=None, timing='virtual', nic_rom=True, nic_model='e1000', minimal_devices=False):
+    if type(minimal_devices) is not bool or (minimal_devices and not manual):
+        raise ValueError('Minimal devices require a manual OS image and a boolean flag')
     if nic_model not in ['e1000', 'e1000e']:
         raise ValueError('Unsupported NIC model')
     if scenario not in SCENARIOS or not 0.2 <= timeout <= 600:
@@ -46,6 +48,8 @@ def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=N
     if network not in ['none', 'isolated', 'internet', 'peer']:
         raise ValueError('Network must be none, isolated or internet')
     disk_interface = disk_interface or ('ide' if external else 'floppy')
+    if minimal_devices and disk_interface != 'ide':
+        raise ValueError('Minimal devices require the complete IDE disk boot path')
     if disk_interface not in ['ide', 'floppy']:
         raise ValueError('Disk interface must be ide or floppy')
     validate_image(image, fixture=not manual)
@@ -72,7 +76,7 @@ def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=N
          'input': {'scenario': scenario, 'command': '1' + SCENARIOS[scenario] + '\n',
                    'seed': 7, 'expected_value': 42, 'timeout': timeout, 'paused': paused,
                    'manual': manual, 'mode': mode, 'memory_mib': memory, 'network': network,
-                   'disk_interface': disk_interface, 'timing': timing, 'nic_rom': nic_rom, 'nic_model': nic_model},
+                   'disk_interface': disk_interface, 'timing': timing, 'nic_rom': nic_rom, 'nic_model': nic_model, 'minimal_devices': minimal_devices},
          'socket_directory': str(sockets), 'source_hashes':
          {'osenv/' + p.name: digest(p) for p in sorted(Path(__file__).parent.glob('*.py'))}})
     for name in ['serial.log', 'early.log', 'qemu.log', 'trace.log', 'events.jsonl', 'annotations.jsonl', 'actions.jsonl']:
@@ -363,6 +367,8 @@ class Owner:
                   '-serial', 'chardev:serial', '-debugcon', f'file:{self.run / "early.log"}',
                   '-qmp', f'unix:{self.sockets / "qmp"},server=on,wait=off',
                   '-gdb', f'unix:{self.sockets / "gdb"},server=on,wait=off']
+        if self.manifest['input'].get('minimal_devices', False):
+            config += ['-nodefaults', '-vga', 'none']
         nic_device = self.manifest['input'].get('nic_model', 'e1000') + ',id=nic0,netdev=net0'
         if not self.manifest['input'].get('nic_rom', True):
             nic_device += ',romfile='

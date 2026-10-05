@@ -78,6 +78,7 @@ def stress(
     nic_rom=True,
     nic_model="e1000",
     controlled_boot=False,
+    minimal_devices=False,
 ):
     if controlled_boot and not production:
         raise ValueError("Controlled boot requires production")
@@ -90,6 +91,7 @@ def stress(
     rid = start(
         timeout=600,
         paused=controlled_boot,
+        minimal_devices=minimal_devices,
         manual=True,
         image=image,
         symbols=symbols,
@@ -103,6 +105,7 @@ def stress(
     run = get_run(rid)
     inputs = {
         "controlled_boot": controlled_boot,
+        "minimal_devices": minimal_devices,
         "seed": seed,
         "requests": requests,
         "profile": profile,
@@ -375,6 +378,7 @@ if __name__ == "__main__":
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--production", action="store_true")
     parser.add_argument("--controlled-boot", action="store_true")
+    parser.add_argument("--minimal-devices", action="store_true")
     parser.add_argument("--no-nic-rom", dest="nic_rom", action="store_false")
     parser.add_argument("--nic-model", choices=["e1000", "e1000e"], default="e1000")
     parser.add_argument("--timing", choices=("virtual", "realtime"), default="realtime")

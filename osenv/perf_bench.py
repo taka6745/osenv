@@ -39,6 +39,7 @@ def main():
     p.add_argument("--image", required=True)
     p.add_argument("--symbols", required=True)
     p.add_argument("--output", required=True)
+    p.add_argument("--minimal-devices", action="store_true")
     p.add_argument("--compare-image")
     p.add_argument("--compare-symbols")
     p.add_argument("--repeat", type=int, default=3)
@@ -81,6 +82,7 @@ def main():
                 controlled_boot=True,
                 nic_rom=a.nic_rom,
                 nic_model=a.nic_model,
+                minimal_devices=a.minimal_devices,
             )
             (directory / f"{name}-{i}.json").write_text(json.dumps(r, indent=2))
             if not r["ok"]:

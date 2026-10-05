@@ -69,6 +69,7 @@ def parser():
     item.add_argument('--symbols', required=True)
     item.add_argument('--production', action='store_true')
     item.add_argument('--nic-model', choices=['e1000', 'e1000e'], default='e1000')
+    item.add_argument('--minimal-devices', action='store_true')
     run = sub.add_parser('run')
     run.add_argument('--scenario', choices=SCENARIOS, default='pass')
     run.add_argument('--timeout', type=float, default=8)
@@ -81,6 +82,7 @@ def parser():
     run.add_argument('--network', choices=['none', 'isolated', 'internet', 'peer'], default='none')
     run.add_argument('--disk-interface', choices=['ide', 'floppy'])
     run.add_argument('--nic-model', choices=['e1000', 'e1000e'], default='e1000')
+    run.add_argument('--minimal-devices', action='store_true')
     for operation in ['status', 'stop', 'recover', 'connections', 'inspect', '_worker', '_deploy_worker', '_job_worker', '_project_deploy_worker']:
         item = sub.add_parser(operation)
         item.add_argument('run_id')
@@ -183,13 +185,13 @@ def dispatch(a):
         return pi4_test(a.project)
     if operation == 'web-test':
         from .web_test import web_test
-        return web_test(a.image, a.symbols, production=a.production, nic_model=a.nic_model)
+        return web_test(a.image, a.symbols, production=a.production, nic_model=a.nic_model, minimal_devices=a.minimal_devices)
     if operation == 'build':
         return build(a.fixture_mode)
     if operation == 'run':
         return start(a.scenario, a.timeout, a.paused, a.image, manual=a.manual,
                      symbols=a.symbols, mode=a.mode, memory=a.memory, network=a.network,
-                     disk_interface=a.disk_interface, nic_model=a.nic_model)
+                     disk_interface=a.disk_interface, nic_model=a.nic_model, minimal_devices=a.minimal_devices)
     if operation == 'test':
         if a.background:
             from .jobs import launch
@@ -261,7 +263,7 @@ def dispatch(a):
                      {'directory': str(old)}, manual=inputs['manual'], mode=inputs['mode'], memory=inputs['memory_mib'],
                      network=inputs['network'], disk_interface=inputs['disk_interface'],
                      timing=inputs.get('timing', 'virtual'), nic_rom=inputs.get('nic_rom', True),
-                     nic_model=inputs.get('nic_model', 'e1000'))
+                     nic_model=inputs.get('nic_model', 'e1000'), minimal_devices=inputs.get('minimal_devices', False))
     if operation == 'recover':
         old = get_run(a.run_id)
         manifest = load(old / 'manifest.json')
@@ -277,7 +279,7 @@ def dispatch(a):
                      manual=inputs['manual'], mode=inputs['mode'], memory=inputs['memory_mib'],
                      network=inputs['network'], disk_interface=inputs['disk_interface'],
                      timing=inputs.get('timing', 'virtual'), nic_rom=inputs.get('nic_rom', True),
-                     nic_model=inputs.get('nic_model', 'e1000'))
+                     nic_model=inputs.get('nic_model', 'e1000'), minimal_devices=inputs.get('minimal_devices', False))
     if operation == 'deploy':
         from .deploy import deploy
         return deploy(a.config, a.build_id)
