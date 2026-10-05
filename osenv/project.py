@@ -24,7 +24,7 @@ def project_build(project):
         raise ValueError(json.dumps(policy))
     versions = doctor()
     sources = {str(p.relative_to(project)): digest(p) for p in sorted(project.rglob('*'))
-               if p.is_file() and '.git' not in p.parts and (p.suffix in ['.c', '.h', '.asm', '.inc', '.ld'] or p.name == 'Makefile')}
+               if p.is_file() and '.git' not in p.parts and (p.suffix in ['.c', '.h', '.asm', '.inc', '.ld', '.S', '.s'] or p.name == 'Makefile')}
     if not sources or 'Makefile' not in sources:
         raise ValueError('No project build definitions')
     inputs = {'schema': 1, 'fixture': False, 'source_hashes': sources, 'tools': versions}
@@ -53,13 +53,13 @@ def project_build(project):
         (output/'mutation-test.log').write_text(rejected.stdout+'\n'+rejected.stderr)
         if rejected.returncode==0:
             raise RuntimeError('Host tests accepted a deliberately disabled IPv4 checksum validation')
-    files = ['oslab.img', 'kernel.elf', 'stage1.elf', 'stage2.elf', 'kernel.bin', 'stage1.bin', 'stage2.bin']
+    files = ['oslab.img', 'kernel.elf', 'stage1.elf', 'stage2.elf', 'kernel.bin', 'stage1.bin', 'stage2.bin', 'kernel.payload']
     manifest = {**inputs, 'build_id': identity, 'files': {f: digest(output/f) for f in files},
                 'symbols': {'kernel': {'file': 'kernel.elf', 'address': 0x100000, 'mode': 'long64'},
                             'stage1': {'file': 'stage1.elf', 'address': 0x7c00, 'mode': 'real16'},
                             'stage2': {'file': 'stage2.elf', 'address': 0x8000, 'mode': 'real16'}},
                 'configuration': {'debug': True},
-                'disk': {'interface': 'ide', 'stage2_lba': 1, 'kernel_lba': 9}}
+                'disk': {'interface': 'ide', 'stage2_lba': 1, 'kernel_lba': 1+(output/'stage2.bin').stat().st_size//512}}
     save(output/'manifest.json', manifest)
     return {'ok': True, 'build_id': identity, 'directory': str(output), **manifest}
 
@@ -137,10 +137,10 @@ def image_gate(directory, internet_host=None):
         original = (directory/'oslab.img').read_bytes()
         ROOT.joinpath('build').mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ROOT/'build') as tmp:
-            for label, offset in [('stage2-corrupt', 600), ('kernel-corrupt', 9*512+16), ('truncated', None)]:
+            for label, offset in [('stage2-corrupt', 600), ('kernel-corrupt', manifest['disk']['kernel_lba']*512+16), ('truncated', None)]:
                 bad = bytearray(original)
                 if offset is None:
-                    bad = bad[:9*512]
+                    bad = bad[:manifest['disk']['kernel_lba']*512]
                 else:
                     bad[offset] ^= 1
                 path = Path(tmp)/(label+'.img');path.write_bytes(bad)

@@ -30,16 +30,18 @@ class EventLog(list):
 
 
 def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=None,
-          manual=False, symbols=None, mode='real16', memory=32, network='none', disk_interface=None):
+          manual=False, symbols=None, mode='real16', memory=32, network='none', disk_interface=None, timing='virtual', nic_rom=True):
     if scenario not in SCENARIOS or not 0.2 <= timeout <= 600:
         raise ValueError('Invalid scenario or timeout (0.2..600 seconds)')
+    if timing not in ['virtual', 'realtime']:
+        raise ValueError('Timing must be virtual or realtime')
     external = manual and image is not None and existing_build is None
     result = existing_build or (None if external else build())
     directory = Path(result['directory']) if result else None
     image = Path(image).resolve() if image else directory / 'fixture.img'
     if mode not in ['real16', 'protected32', 'long64'] or not 16 <= memory <= 4096:
         raise ValueError('Invalid CPU mode or RAM size (16..4096 MiB)')
-    if network not in ['none', 'isolated', 'internet']:
+    if network not in ['none', 'isolated', 'internet', 'peer']:
         raise ValueError('Network must be none, isolated or internet')
     disk_interface = disk_interface or ('ide' if external else 'floppy')
     if disk_interface not in ['ide', 'floppy']:
@@ -68,7 +70,7 @@ def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=N
          'input': {'scenario': scenario, 'command': '1' + SCENARIOS[scenario] + '\n',
                    'seed': 7, 'expected_value': 42, 'timeout': timeout, 'paused': paused,
                    'manual': manual, 'mode': mode, 'memory_mib': memory, 'network': network,
-                   'disk_interface': disk_interface},
+                   'disk_interface': disk_interface, 'timing': timing, 'nic_rom': nic_rom},
          'socket_directory': str(sockets), 'source_hashes':
          {'osenv/' + p.name: digest(p) for p in sorted(Path(__file__).parent.glob('*.py'))}})
     for name in ['serial.log', 'early.log', 'qemu.log', 'trace.log', 'events.jsonl', 'annotations.jsonl', 'actions.jsonl']:
@@ -289,6 +291,20 @@ class Owner:
             with (self.run / 'annotations.jsonl').open('a') as stream:
                 stream.write(json.dumps(entry) + '\n')
             return {'ok': True, 'entry': entry}
+        if operation == 'network-forward':
+            host_port, guest_port = request['host_port'], request.get('guest_port', 80)
+            if (type(host_port) is not int or type(guest_port) is not int or
+                    not 1024 <= host_port <= 65535 or not 1 <= guest_port <= 65535):
+                raise ValueError('Invalid TCP forwarding ports')
+            if self.manifest['input']['network'] == 'none':
+                raise ValueError('No guest network')
+            result = self.qmp.call('human-monitor-command', {'command-line':
+                f'hostfwd_add net0 tcp:127.0.0.1:{host_port}-:{guest_port}'})
+            if result:
+                raise RuntimeError(result)
+            save(self.run / 'forward.json', {'host': '127.0.0.1', 'host_port': host_port,
+                                           'guest_port': guest_port})
+            return {'ok': True, 'host': '127.0.0.1', 'host_port': host_port, 'guest_port': guest_port}
         if operation == 'qmp':
             name = request['command']
             if not name.startswith('query-') and name not in ['trace-event-get-state', 'trace-event-set-state']:
@@ -340,11 +356,24 @@ class Owner:
                   '-serial', 'chardev:serial', '-debugcon', f'file:{self.run / "early.log"}',
                   '-qmp', f'unix:{self.sockets / "qmp"},server=on,wait=off',
                   '-gdb', f'unix:{self.sockets / "gdb"},server=on,wait=off']
+        nic_device = 'e1000,id=nic0,netdev=net0'
+        if not self.manifest['input'].get('nic_rom', True):
+            nic_device += ',romfile='
         if self.manifest['input']['network'] in ['isolated', 'internet']:
             restriction = 'on' if self.manifest['input']['network'] == 'isolated' else 'off'
-            config += ['-netdev', 'user,id=net0,restrict=' + restriction, '-device', 'e1000,id=nic0,netdev=net0',
+            config += ['-netdev', 'user,id=net0,restrict=' + restriction, '-device', nic_device,
                        '-object', f'filter-dump,id=pcap0,netdev=net0,file={self.run / "network.pcap"}']
-        if self.manifest['input']['network'] == 'internet':
+        if self.manifest['input']['network'] == 'peer':
+            with socket.socket() as probe:
+                probe.bind(('127.0.0.1', 0))
+                port = probe.getsockname()[1]
+            self.manifest['peer_port'] = port
+            save(self.run / 'manifest.json', self.manifest)
+            config += ['-netdev', f'socket,id=net0,listen=127.0.0.1:{port}',
+                       '-device', nic_device,
+                       '-object', f'filter-dump,id=pcap0,netdev=net0,file={self.run / "network.pcap"}']
+        if (self.manifest['input']['network'] == 'internet' or
+                self.manifest['input'].get('timing') == 'realtime'):
             at = config.index('-icount')
             del config[at:at+2]
         firmware = Path(tool('qemu-system-x86_64')).resolve().parent.parent / 'share/qemu/bios-256k.bin'
@@ -360,7 +389,8 @@ class Owner:
             [tool(name), '--version']).splitlines()[0] for name in ['qemu-system-x86_64', 'gdb', 'nasm']}
         self.manifest['machine'] = {'type': MACHINE, 'cpu': 'qemu64', 'ram_mib': self.manifest['input']['memory_mib'],
                                     'acceleration': 'tcg', 'cpus': 1, 'network': self.manifest['input']['network'],
-                                    'rtc': '2000-01-01T00:00:00', 'record_replay': False}
+                                    'rtc': '2000-01-01T00:00:00', 'record_replay': False,
+                                    'timing': self.manifest['input'].get('timing', 'virtual')}
         self.manifest['qemu_argv'] = [tool('qemu-system-x86_64')] + config
         save(self.run / 'manifest.json', self.manifest)
         output = (self.run / 'qemu.log').open('ab', buffering=0)

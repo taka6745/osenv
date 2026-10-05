@@ -113,3 +113,32 @@ returns an ID, uploads the exact image and runs the same gate in dedicated owned
 homelab QEMU VMs. Use status/wait/logs/artifacts to retrieve results. Deployments
 retain private source/image uploads and raw evidence. The diagnostic OS image is
 explicitly labelled; release builds need separate exact-image acceptance.
+
+Run actual OS web stress with `python3 -m osenv.web_stress --image PATH
+--symbols PATH --requests 5000`. Add `--profile` only for a guest built with
+PROFILE=1. Seeded fragmentation, exact response comparisons, 767/768/769-byte
+boundaries, malformed requests and slow-client timeout recovery preserve inputs,
+latencies, packet captures and failures in each run. `--timing realtime` (default)
+is a throughput experiment; `--timing virtual` retains deterministic icount.
+Both keep networking isolated. TCG timings do not establish physical cycles,
+cache misses or Raspberry Pi performance.
+
+Test oslab's actual packed boot decoder with `python3 -m osenv.packed_test
+--build build/oslab-prod`. This compiles the repository-authored host encoder
+with sanitizers, checks short inputs against an exhaustive size oracle, compares
+every expanded byte at the real kernel entry, and boots malformed disk images.
+Bounds guards, expected halt addresses and full CPU/RAM captures are checked
+externally. Fixtures never substitute for these actual OS images.
+
+Web stress also saves connect/send/first-byte/completion samples and independently
+reassembled TCP80 wire costs (frames, bytes, ACKs, FIN and retransmissions).
+Boot readiness comes from captured DHCP ACK, followed by a complete HTTP reply.
+Use `--production` for a release guest; `--no-nic-rom` is an opt-in experiment,
+not the default. Captured Ethernet totals exclude physical FCS/preamble/IFG.
+
+`python3 -m osenv.http_interop --image PATH --symbols PATH` checks a real
+production response with the standard HTTP client and verifies that deliberate
+truncation of that actual response raises IncompleteRead.
+`python3 -m osenv.irq_test --image PATH --symbols PATH` requires a full debug
+image and checks two real NIC interrupt deliveries, cause clearing and EOI
+through GDB. Both retain run evidence and full failure captures.

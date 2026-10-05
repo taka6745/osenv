@@ -62,6 +62,12 @@ def parser():
     sub.add_parser('capabilities')
     item = sub.add_parser('benchmark')
     item.add_argument('--repeat', type=int, default=5)
+    item = sub.add_parser('pi4-test')
+    item.add_argument('--project', required=True)
+    item = sub.add_parser('web-test')
+    item.add_argument('--image', required=True)
+    item.add_argument('--symbols', required=True)
+    item.add_argument('--production', action='store_true')
     run = sub.add_parser('run')
     run.add_argument('--scenario', choices=SCENARIOS, default='pass')
     run.add_argument('--timeout', type=float, default=8)
@@ -71,7 +77,7 @@ def parser():
     run.add_argument('--symbols', help='ELF at its linked load address')
     run.add_argument('--mode', choices=['real16', 'protected32', 'long64'], default='real16')
     run.add_argument('--memory', type=int, default=32)
-    run.add_argument('--network', choices=['none', 'isolated', 'internet'], default='none')
+    run.add_argument('--network', choices=['none', 'isolated', 'internet', 'peer'], default='none')
     run.add_argument('--disk-interface', choices=['ide', 'floppy'])
     for operation in ['status', 'stop', 'recover', 'connections', 'inspect', '_worker', '_deploy_worker', '_job_worker', '_project_deploy_worker']:
         item = sub.add_parser(operation)
@@ -102,6 +108,10 @@ def parser():
     item = sub.add_parser('trace')
     item.add_argument('run_id')
     item.add_argument('--events', default='guest_errors,int,cpu_reset')
+    item = sub.add_parser('network-forward')
+    item.add_argument('run_id')
+    item.add_argument('--host-port', type=int, required=True)
+    item.add_argument('--guest-port', type=int, default=80)
     item = sub.add_parser('network-link')
     item.add_argument('run_id')
     item.add_argument('state', choices=['up', 'down'])
@@ -166,6 +176,12 @@ def dispatch(a):
         if operation == 'project-test':
             return project_test(a.project, a.internet_host)
         return project_deploy(a.project, a.config, a.internet_host)
+    if operation == 'pi4-test':
+        from .pi4_test import pi4_test
+        return pi4_test(a.project)
+    if operation == 'web-test':
+        from .web_test import web_test
+        return web_test(a.image, a.symbols, production=a.production)
     if operation == 'build':
         return build(a.fixture_mode)
     if operation == 'run':
@@ -262,7 +278,7 @@ def dispatch(a):
     if operation == 'network-link':
         return call(a.run_id, {'operation': operation, 'up': a.state == 'up'})
     if operation in ['stop', 'connections', 'capture', 'serial', 'debug', 'inspect', 'qmp',
-                     'physical-memory', 'annotate', 'trace']:
+                     'physical-memory', 'annotate', 'trace', 'network-forward']:
         request = vars(a).copy()
         request.pop('run_id')
         return call(a.run_id, request)

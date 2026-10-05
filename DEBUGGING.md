@@ -80,6 +80,7 @@ Incomplete UART records do not prematurely freeze exception printing. Use the
 kernel ELF for long-mode symbols and add stage1/stage2 ELF symbols at 0x7c00/0x8000
 for boot debugging. The OS exposes DHCP/DNS/HTTP commands and network/page counters;
 GDB/QMP still inspect registers, memory and DMA without a working guest endpoint.
-The driver uses single-CPU polled DMA; no scheduler/process/filesystem inspection
+The driver uses receive IRQ wakeups and bounded single-CPU DMA-ring draining;
+no scheduler/process/filesystem inspection
 is claimed. `--network internet` opts into live outbound NAT and disables icount
 fast-forwarding. The default OS gate uses no Internet.
