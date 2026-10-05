@@ -35,6 +35,39 @@ class HostTests(unittest.TestCase):
             self.assertFalse(audit(root, os_only=True)['ok'])
             self.assertTrue(audit(root)['ok'])
 
+    def test_fragmented_panic_waits_for_complete_record(self):
+        from osenv.protocol import panic_record_ready
+        for record in [b'OSE1 PANIC vector=6\n', b'OSL1 PANIC vector=6 error=0 rip=0x100042\n']:
+            for end in range(len(record)):
+                self.assertFalse(panic_record_ready(record[:end]))
+            self.assertTrue(panic_record_ready(record))
+        self.assertFalse(panic_record_ready(b'OSL1 LOG text=OSL1 PANIC vector=6\n'))
+
+    def test_wire_reassembly_wrap_duplicates_and_corruption(self):
+        import struct
+        from osenv.project import wire_evidence
+        content=b'HTTP/1.0 200 OK\r\n\r\nbody'
+        def record(offset, data):
+            ip=bytearray(20);ip[0]=0x45;ip[9]=6
+            ip[2:4]=(40+len(data)).to_bytes(2,'big')
+            ip[12:16]=bytes([192,0,2,1]);ip[16:20]=bytes([10,0,2,15])
+            tcp=bytearray(20);tcp[0:2]=(80).to_bytes(2,'big');tcp[2:4]=(55000).to_bytes(2,'big')
+            tcp[4:8]=((0xfffffff0+offset)&0xffffffff).to_bytes(4,'big');tcp[12]=0x50
+            frame=bytes(12)+b'\x08\x00'+ip+tcp+data
+            return struct.pack('<IIII',0,0,len(frame),len(frame))+frame
+        header=struct.pack('<IHHIIII',0xa1b2c3d4,2,4,0,0,65536,1)
+        good=header+record(12,content[12:])+record(0,content[:12])+record(0,content[:12])
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'network.pcap';path.write_bytes(good)
+            result=wire_evidence(path)
+            self.assertEqual(result['responses'][0]['bytes'],len(content))
+            self.assertTrue(result['responses'][0]['http_header'])
+            self.assertEqual(len(result['responses']),1)
+            path.write_bytes(good+record(0,b'X'))
+            with self.assertRaises(ValueError):wire_evidence(path)
+            path.write_bytes(good[:-1])
+            with self.assertRaises(ValueError):wire_evidence(path)
+
     def test_protocol_rejects_false_success(self):
         good = b'OSE1 BOOT real16\nOSE1 READY\nOSE1 RESULT id=1 value=42\nOSE1 DONE\n'
         self.assertTrue(verdict(good, 33, [])['ok'])

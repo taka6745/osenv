@@ -11,7 +11,7 @@ import time
 import uuid
 from .core import ROOT, MACHINE, build, command, digest, get_run, load, save, tool, validate_image
 from .debug import Debugger, operations
-from .protocol import verdict
+from .protocol import verdict, panic_record_ready
 from .transport import QMP
 
 SCENARIOS = {'pass': 'P', 'fault': 'F', 'hang': 'H', 'bad-result': 'B',
@@ -39,8 +39,8 @@ def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=N
     image = Path(image).resolve() if image else directory / 'fixture.img'
     if mode not in ['real16', 'protected32', 'long64'] or not 16 <= memory <= 4096:
         raise ValueError('Invalid CPU mode or RAM size (16..4096 MiB)')
-    if network not in ['none', 'isolated']:
-        raise ValueError('Network must be none or isolated')
+    if network not in ['none', 'isolated', 'internet']:
+        raise ValueError('Network must be none, isolated or internet')
     disk_interface = disk_interface or ('ide' if external else 'floppy')
     if disk_interface not in ['ide', 'floppy']:
         raise ValueError('Disk interface must be ide or floppy')
@@ -340,9 +340,13 @@ class Owner:
                   '-serial', 'chardev:serial', '-debugcon', f'file:{self.run / "early.log"}',
                   '-qmp', f'unix:{self.sockets / "qmp"},server=on,wait=off',
                   '-gdb', f'unix:{self.sockets / "gdb"},server=on,wait=off']
-        if self.manifest['input']['network'] == 'isolated':
-            config += ['-netdev', 'user,id=net0,restrict=on', '-device', 'e1000,id=nic0,netdev=net0',
+        if self.manifest['input']['network'] in ['isolated', 'internet']:
+            restriction = 'on' if self.manifest['input']['network'] == 'isolated' else 'off'
+            config += ['-netdev', 'user,id=net0,restrict=' + restriction, '-device', 'e1000,id=nic0,netdev=net0',
                        '-object', f'filter-dump,id=pcap0,netdev=net0,file={self.run / "network.pcap"}']
+        if self.manifest['input']['network'] == 'internet':
+            at = config.index('-icount')
+            del config[at:at+2]
         firmware = Path(tool('qemu-system-x86_64')).resolve().parent.parent / 'share/qemu/bios-256k.bin'
         if not firmware.exists():
             for candidate in [Path('/usr/share/qemu/bios-256k.bin'), Path('/usr/share/seabios/bios-256k.bin')]:
@@ -443,7 +447,7 @@ class Owner:
                 except BlockingIOError:
                     pass
                 break
-            if b'OSE1 PANIC ' in self.raw:
+            if panic_record_ready(self.raw):
                 self.reason = 'panic'
                 self.capture('panic')
                 break
@@ -452,6 +456,10 @@ class Owner:
                 self.capture('timeout')
                 break
         result = verdict(bytes(self.raw), self.process.poll(), self.events, self.reason == 'timeout')
+        if self.reason == 'panic' and self.manifest['input']['manual']:
+            import re
+            match = re.search(rb'OSL1 PANIC vector=(\d+)', self.raw)
+            result = {'ok': False, 'verdict': 'panic', 'panic': {'vector': int(match[1]) if match else None}}
         if self.reason == 'stopped':
             result = {'ok': False, 'verdict': 'stopped'}
         if self.manifest['input']['manual'] and self.reason == 'stopped':

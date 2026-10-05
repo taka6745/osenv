@@ -48,6 +48,15 @@ def parser():
     item.add_argument('--os-only', action='store_true')
     item = sub.add_parser('build')
     item.add_argument('--fixture-mode', choices=['real16', 'protected32', 'long64'], default='real16')
+    item = sub.add_parser('project-build')
+    item.add_argument('--project', required=True)
+    item = sub.add_parser('project-test')
+    item.add_argument('--project', required=True)
+    item.add_argument('--internet-host', help='Opt-in live HTTP/DNS acceptance host')
+    item = sub.add_parser('project-deploy')
+    item.add_argument('--project', required=True)
+    item.add_argument('--config', required=True)
+    item.add_argument('--internet-host')
     item = sub.add_parser('test')
     item.add_argument('--background', action='store_true')
     sub.add_parser('capabilities')
@@ -62,9 +71,9 @@ def parser():
     run.add_argument('--symbols', help='ELF at its linked load address')
     run.add_argument('--mode', choices=['real16', 'protected32', 'long64'], default='real16')
     run.add_argument('--memory', type=int, default=32)
-    run.add_argument('--network', choices=['none', 'isolated'], default='none')
+    run.add_argument('--network', choices=['none', 'isolated', 'internet'], default='none')
     run.add_argument('--disk-interface', choices=['ide', 'floppy'])
-    for operation in ['status', 'stop', 'recover', 'connections', 'inspect', '_worker', '_deploy_worker', '_job_worker']:
+    for operation in ['status', 'stop', 'recover', 'connections', 'inspect', '_worker', '_deploy_worker', '_job_worker', '_project_deploy_worker']:
         item = sub.add_parser(operation)
         item.add_argument('run_id')
     item = sub.add_parser('wait')
@@ -130,6 +139,10 @@ def dispatch(a):
     if operation == '_worker':
         worker(a.run_id)
         return {'ok': True}
+    if operation == '_project_deploy_worker':
+        from .project import project_deploy_worker
+        project_deploy_worker(a.run_id)
+        return {'ok': True}
     if operation == '_deploy_worker':
         from .deploy import deploy_worker
         deploy_worker(a.run_id)
@@ -146,6 +159,13 @@ def dispatch(a):
         return audit(a.repo, a.os_only)
     if operation == 'doctor':
         return doctor()
+    if operation in ['project-build', 'project-test', 'project-deploy']:
+        from .project import project_build, project_test, project_deploy
+        if operation == 'project-build':
+            return project_build(a.project)
+        if operation == 'project-test':
+            return project_test(a.project, a.internet_host)
+        return project_deploy(a.project, a.config, a.internet_host)
     if operation == 'build':
         return build(a.fixture_mode)
     if operation == 'run':
@@ -182,7 +202,7 @@ def dispatch(a):
                 'control-registers', 'register-writes', 'device-inspection', 'trace',
                 'isolated-network', 'link-failure-injection', 'pcap', 'qcow2-overlays',
                 'fault-capture', 'hang-capture', 'reset-capture', 'reproduce', 'writable-logs',
-                'benchmark', 'homelab-deploy'],
+                'benchmark', 'homelab-deploy', 'project-build', 'project-test', 'project-deploy', 'opt-in-Internet'],
                 'guest': {'fixture': True, 'cpu_modes_tested': ['real16','protected32','long64'],
                           'network_stack': False, 'threads': False, 'drivers': False},
                 'record_replay': False}

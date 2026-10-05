@@ -92,3 +92,24 @@ libraries were considered; no external guest code or driver was imported.
 checks tracked source for external imports, dependency declarations and obvious
 placeholder bodies. The integration gate runs this audit too. Toolchain smoke
 checks live in `tools/check_toolchain.py`; they are host probes, not OS code.
+
+## Real OS projects
+
+`project-build --project ../oslab` builds the actual guest Makefile into immutable
+external build directories, saves source/tool/image/symbol hashes and runs host
+sanitizers plus a deliberately disabled checksum-validation mutant. No harness
+fixture is substituted. `project-test --project ../oslab` verifies full BIOS disk
+boot, real memory exhaustion, #UD/#PF and hang captures/recovery, corrupt/truncated
+boot images, isolated DHCP, link down, absent DNS and GDB-injected RX errors.
+
+`project-test --project ../oslab --internet-host example.com` explicitly adds five
+real DNS/TCP/HTTP requests. `run --network internet` enables outbound emulator NAT
+and wall-clock execution, separate from the isolated deterministic gate.
+Independent TCP reassembly compares captured response lengths/hashes with guest
+reports, including retransmissions and sequence wrap. Guest code belongs to oslab.
+
+`project-deploy --project ../oslab --config local/deploy.json --internet-host example.com`
+returns an ID, uploads the exact image and runs the same gate in dedicated owned
+homelab QEMU VMs. Use status/wait/logs/artifacts to retrieve results. Deployments
+retain private source/image uploads and raw evidence. The diagnostic OS image is
+explicitly labelled; release builds need separate exact-image acceptance.

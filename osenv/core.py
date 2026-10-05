@@ -10,7 +10,7 @@ import tempfile
 
 ROOT = Path(os.environ.get('OSENV_ROOT', Path.cwd())).resolve()
 MACHINE = 'pc-i440fx-9.2'
-TOOLS = {'nasm': '3.02', 'ld.lld': '23.1.2', 'llvm-objcopy': '23.1.2',
+TOOLS = {'clang': '23.1.2', 'nasm': '3.02', 'ld.lld': '23.1.2', 'llvm-objcopy': '23.1.2',
          'qemu-system-x86_64': '11.1.2', 'qemu-img': '11.1.2', 'gdb': '17.2'}
 
 
@@ -26,7 +26,7 @@ def tool(name):
     env = os.environ.get('OSENV_' + name.upper().replace('-', '_').replace('.', '_'))
     if env:
         return env
-    formula = ('llvm' if name.startswith('llvm-') else 'qemu' if name.startswith('qemu-')
+    formula = ('llvm' if name.startswith('llvm-') or name == 'clang' else 'qemu' if name.startswith('qemu-')
                else {'ld.lld': 'lld'}.get(name, name))
     homebrew = Path('/opt/homebrew/opt') / formula / 'bin' / name
     if homebrew.is_file():

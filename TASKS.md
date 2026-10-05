@@ -22,3 +22,14 @@ Result: source audits pass; six host regressions (including deliberate policy
 violations), all 18 local VM gate cases and toolchain smoke pass. Updated exact
 fixture image and both CPU-mode fixtures passed seven homelab checks. OS
 implementation remains absent. CI verification is reported by the commit status.
+
+T003 — Goal: control and externally accept actual OS builds and Internet runs.
+Interface: project-build/test/deploy, explicit internet NIC mode, full-line OSL1
+panic detection and independently reassembled pcap evidence. Prerequisites:
+oslab Makefile/authored guest sources, pinned host tools and private SSH alias.
+Acceptance: source/host mutation checks, full custom-disk OS gate, repeated live
+requests matching wire bytes/hash; exact-image remote gate; fixture gate unchanged.
+Provenance: controller changes authored here; guest code maintained in oslab;
+no external library or implementation source imported. Result: OS and harness
+checks locally pass; diagnostic image also homelab verified. Final commit
+verification is reported by CI status, separate from release acceptance.

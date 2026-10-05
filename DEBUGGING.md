@@ -72,3 +72,14 @@ capacity and authentication should be discovered before deploying. The current
 remote directory is project-owned under `/var/lib/vz/osenv-harness/`; a configurable
 non-Proxmox destination is future work. Runtime versions and firmware hashes
 are recorded separately from build versions.
+
+## oslab integration
+
+Complete `OSL1 PANIC` records trigger raw capture like the fixture protocol.
+Incomplete UART records do not prematurely freeze exception printing. Use the
+kernel ELF for long-mode symbols and add stage1/stage2 ELF symbols at 0x7c00/0x8000
+for boot debugging. The OS exposes DHCP/DNS/HTTP commands and network/page counters;
+GDB/QMP still inspect registers, memory and DMA without a working guest endpoint.
+The driver uses single-CPU polled DMA; no scheduler/process/filesystem inspection
+is claimed. `--network internet` opts into live outbound NAT and disables icount
+fast-forwarding. The default OS gate uses no Internet.

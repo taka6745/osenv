@@ -20,3 +20,9 @@ def verdict(raw, code, events, timed_out=False):
     if code != 33:
         return {'verdict': 'exit_failed', 'ok': False, 'reason': f'expected debug-exit 33, got {code}'}
     return {'verdict': 'pass', 'ok': True}
+
+
+def panic_record_ready(raw):
+    """Act only on a complete protocol record, never a UART prefix."""
+    return any(line.startswith((b'OSE1 PANIC ', b'OSL1 PANIC '))
+               for line in raw.split(b'\n')[:-1])
