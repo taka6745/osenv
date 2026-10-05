@@ -81,6 +81,7 @@ def stress(
     controlled_boot=False,
     minimal_devices=False,
     boot_kernel=None,
+    acceleration='tcg',
 ):
     if controlled_boot and not production:
         raise ValueError("Controlled boot requires production")
@@ -104,6 +105,7 @@ def stress(
         timing=timing,
         nic_rom=nic_rom,
         nic_model=nic_model,
+        acceleration=acceleration,
     )["run_id"]
     run = get_run(rid)
     inputs = {
@@ -120,7 +122,8 @@ def stress(
         "timing": timing,
         "nic_rom": nic_rom,
         "nic_model": nic_model,
-        "scope": "single CPU QEMU TCG, isolated NAT; no physical cycle claim",
+        "acceleration": acceleration,
+        "scope": f"single CPU QEMU {acceleration}, isolated NAT; no physical cycle claim",
     }
     (run / "stress-inputs.json").write_text(json.dumps(inputs, indent=2))
     samples = []
@@ -398,6 +401,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-nic-rom", dest="nic_rom", action="store_false")
     parser.add_argument("--nic-model", choices=["e1000", "e1000e"], default="e1000")
     parser.add_argument("--timing", choices=("virtual", "realtime"), default="realtime")
+    parser.add_argument('--acceleration',choices=['tcg','kvm'],default='tcg')
     args = parser.parse_args()
     if not 1 <= args.requests <= 100000:
         parser.error("requests must be 1..100000")

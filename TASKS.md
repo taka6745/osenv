@@ -193,3 +193,29 @@ responses at 6680.7 RPS and 53.543 ms median CPU-release-to-complete-HTTP.
 Separate QMP breakpoint probes measured raw_entry 48.605 ms and raw_loop 50.238 ms.
 PCAP virtual time is kept separate from host epoch/monotonic time; physical
 power-on and physical throughput are unmeasured. Evidence: local/t022.
+
+T023 — Goal: bounded agent experiments for boot, instruction/layout, network and
+parallel capacity. Interface: experiment JSON plan, raw-build --pvh, actual
+PVH gates, resume/snapshot/parallel probes and explicit realtime KVM selection.
+Prerequisites: exact authored OS sources/images, owned VMs, fixed seed/config;
+KVM additionally Linux x86-64 and accessible /dev/kvm, otherwise explicit failure.
+Acceptance: actual source/body/hash matching, integrated/decoder/direct gates,
+serialized alternating runs, retained failures/source snapshots/paired intervals;
+capacity counts errors and verifies recovery, warm probes verify real RAM/HTTP.
+Implemented using Python standard library and documented QMP/ELF/Xen interfaces;
+all literal guest bytes stay in oslab. Three low-context agents investigated
+boot, checksum/page layout and packets. Host regressions, actual fixture gate,
+raw OS/decoder gates,19 PVH boundaries and a rejected magic-check mutant passed.
+Warm resume median3.038ms and snapshot9.960ms include control/RAM/client costs.
+Separate VM capacity:1/2/4 replicas4467/6256/6117 verified aggregateRPS;2 clients
+on one VM2568RPS, all128 replies correct. No guest SMP/affinity claim.
+Exact release disk2c226df8...097d and PVH07e285d7...4218 passed homelab full raw,
+decoder,19 direct boundaries and1000-response stress on each boot route.
+Three matched KVM5000-response runs per route:12.820ms direct cold full HTTP
+versus20.316ms BIOS;4043 versus3984 RPS, no general throughput-win claim.
+Disk exhaustion interrupted one local final experiment; it remains failed.
+Verified sparse rewrites freed15GiB without changing capture bytes/hash/length;
+new capture storage runs that verification before atomic replacement and passed
+actual boot/debug/fault/recovery plus dense/zero/tail/missing-file regressions.
+Release validation uses external local/t023; frozen source and exact-head CI
+verdicts stay separate from cold entry, powered state and physical power-on.

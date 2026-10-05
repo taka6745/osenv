@@ -52,6 +52,16 @@ def parser():
     item.add_argument('--project',required=True)
     item.add_argument('--output',required=True)
     item.add_argument('--packed',action='store_true')
+    item.add_argument('--pvh',action='store_true')
+    item = sub.add_parser('experiment')
+    item.add_argument('--plan',required=True)
+    item.add_argument('--output',required=True)
+    item = sub.add_parser('parallel-probe')
+    item.add_argument('--build',required=True)
+    item.add_argument('--output',required=True)
+    item.add_argument('--replicas',type=int,default=1)
+    item.add_argument('--clients',type=int,default=1)
+    item.add_argument('--requests',type=int,default=512)
     item = sub.add_parser('raw-test')
     item.add_argument('--build',required=True)
     item.add_argument('--output',required=True)
@@ -102,6 +112,8 @@ def parser():
     run.add_argument('--nic-model', choices=['e1000', 'e1000e'], default='e1000')
     run.add_argument('--minimal-devices', action='store_true')
     run.add_argument('--boot-kernel', help='Optional authored PVH ELF32 plus matching provenance')
+    run.add_argument('--timing',choices=['virtual','realtime'],default='virtual')
+    run.add_argument('--acceleration',choices=['tcg','kvm'],default='tcg')
     for operation in ['status', 'stop', 'recover', 'connections', 'inspect', '_worker', '_deploy_worker', '_job_worker', '_project_deploy_worker']:
         item = sub.add_parser(operation)
         item.add_argument('run_id')
@@ -194,7 +206,13 @@ def dispatch(a):
         return doctor()
     if operation == 'raw-build':
         from .raw_build import build as raw_build
-        return {'ok':True,**raw_build(a.project,a.output,a.packed)}
+        return {'ok':True,**raw_build(a.project,a.output,a.packed,a.pvh)}
+    if operation == 'experiment':
+        from .experiment import run as experiment
+        return experiment(a.plan,a.output)
+    if operation == 'parallel-probe':
+        from .parallel_probe import probe as parallel_probe
+        return parallel_probe(a.build,a.output,a.replicas,a.clients,a.requests)
     if operation == 'raw-test':
         from .raw_test import test as raw_test
         return raw_test(a.build,a.output)
@@ -219,7 +237,8 @@ def dispatch(a):
     if operation == 'run':
         return start(a.scenario, a.timeout, a.paused, a.image, manual=a.manual,
                      symbols=a.symbols, mode=a.mode, memory=a.memory, network=a.network,
-                     disk_interface=a.disk_interface, nic_model=a.nic_model, minimal_devices=a.minimal_devices, boot_kernel=a.boot_kernel)
+                     disk_interface=a.disk_interface, nic_model=a.nic_model, minimal_devices=a.minimal_devices, boot_kernel=a.boot_kernel,
+                     timing=a.timing,acceleration=a.acceleration)
     if operation == 'test':
         if a.background:
             from .jobs import launch
@@ -292,7 +311,8 @@ def dispatch(a):
                      network=inputs['network'], disk_interface=inputs['disk_interface'],
                      timing=inputs.get('timing', 'virtual'), nic_rom=inputs.get('nic_rom', True),
                      nic_model=inputs.get('nic_model', 'e1000'), minimal_devices=inputs.get('minimal_devices', False),
-                     boot_kernel=old / 'pvh.elf' if inputs.get('boot_route') == 'pvh' else None)
+                     boot_kernel=old / 'pvh.elf' if inputs.get('boot_route') == 'pvh' else None,
+                     acceleration=inputs.get('acceleration','tcg'))
     if operation == 'recover':
         old = get_run(a.run_id)
         manifest = load(old / 'manifest.json')
@@ -309,7 +329,8 @@ def dispatch(a):
                      network=inputs['network'], disk_interface=inputs['disk_interface'],
                      timing=inputs.get('timing', 'virtual'), nic_rom=inputs.get('nic_rom', True),
                      nic_model=inputs.get('nic_model', 'e1000'), minimal_devices=inputs.get('minimal_devices', False),
-                     boot_kernel=old / 'pvh.elf' if inputs.get('boot_route') == 'pvh' else None)
+                     boot_kernel=old / 'pvh.elf' if inputs.get('boot_route') == 'pvh' else None,
+                     acceleration=inputs.get('acceleration','tcg'))
     if operation == 'deploy':
         from .deploy import deploy
         return deploy(a.config, a.build_id)

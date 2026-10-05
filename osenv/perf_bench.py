@@ -17,11 +17,15 @@ def summarize(results):
     if len(routes) != 1:
         raise ValueError("Boot route changed between repetitions")
     route = routes.pop()
+    accelerations={r.get('acceleration','tcg') for r in results}
+    if len(accelerations)!=1:raise ValueError('Acceleration changed between repetitions')
+    acceleration=accelerations.pop()
     release_times = [(r.get('cpu_release_to_returned_request') or {}).get('cpu_release_to_returned_request_seconds') for r in results]
     return {
         "ok": True,
         "image_sha256": results[0]["image_sha256"],
         "boot_route": route,
+        "acceleration": acceleration,
         "runs": [r["run_id"] for r in results],
         "requests": sum(r["requests"] for r in results),
         "requests_per_second": sum(r["requests"] for r in results)
@@ -57,7 +61,7 @@ def summarize(results):
             if route.startswith("pvh-qboot")
             else "Full BIOS disk boot"
         )
-        + "; resume includes control RPC and DHCP-observation polling. Host setup reported separately. TCG/NAT, not physical cycles or Cloudflare-equivalent cold start.",
+        + f"; resume includes control RPC and DHCP-observation polling. Host setup reported separately. QEMU {acceleration}/NAT, not physical cycles or Cloudflare-equivalent cold start.",
     }
 
 
@@ -76,6 +80,7 @@ def main():
     p.add_argument("--seed", type=int, default=24326)
     p.add_argument("--nic-model", choices=["e1000", "e1000e"], default="e1000")
     p.add_argument("--no-nic-rom", dest="nic_rom", action="store_false")
+    p.add_argument('--acceleration',choices=['tcg','kvm'],default='tcg')
     a = p.parse_args()
     if not 1 <= a.repeat <= 20 or not 1 <= a.requests <= 100000:
         p.error("repeat must be 1..20 and requests 1..100000")
@@ -121,6 +126,7 @@ def main():
                 controlled_boot=True,
                 nic_rom=a.nic_rom,
                 nic_model=a.nic_model,
+                acceleration=a.acceleration,
                 minimal_devices=a.minimal_devices,
                 boot_kernel=(
                     a.compare_boot_kernel if name == "baseline" else a.boot_kernel

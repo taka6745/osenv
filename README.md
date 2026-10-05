@@ -253,3 +253,41 @@ acceptance. Five matched local TCG runs returned 50,000 verified responses at
 breakpoint runs measured 48.605 ms to raw_entry and 50.238 ms to raw_loop. These
 are emulator measurements, not physical throughput. Saved evidence remains in
 local/t022; TASKS.md records the accepted image identity and test scope.
+
+
+Agent experiments use `experiment --plan PLAN.json --output NEW_DIR`. A plan has
+`hypothesis`, `baseline`, `candidates`, `repeat` (3–9), `requests` (100–30,000)
+and `seed`; each variant has unique `name` and actual `build`, optionally
+`boot_kernel` and numeric `expected_bar`. The runner checks actual sources,
+artifacts and identical website bytes, runs integrated/decoder/direct-entry gates,
+then serializes alternating trials under a measurement lock. It retains frozen
+harness source, failures and seeded paired bootstrap intervals. A throughput
+interval crossing1 is inconclusive; fewer instructions are not a speed claim.
+
+```sh
+python3 -m osenv raw-build --project ../oslab --output build/raw-pvh --packed --pvh
+python3 -m osenv.raw_pvh_test --build build/raw-pvh --report local/direct.json --expected-bar 0xc0000000
+python3 -m osenv experiment --plan local/plan.json --output local/trial
+python3 -m osenv parallel-probe --build build/raw-pvh --output local/capacity --replicas 4 --clients 1 --requests 512
+python3 -m osenv.restore_probe --image build/raw-pvh/oslab.img --symbols build/raw-pvh/kernel.elf --mode resume --repeat 5
+```
+
+`parallel-probe` verifies actual full responses and post-load recovery, retaining
+failed requests. Its replicas are separate one-vCPU VMs without affinity; it
+implements neither guest SMP nor concurrent connections. Resume retains a paused,
+powered service. Snapshot mode additionally restores deliberately changed RAM;
+neither proves arbitrary external peer, lease or clock recovery after suspend.
+
+Explicit `--acceleration kvm` is available in `run`, `web_stress` and `perf_bench`.
+It requires manual realtime execution on Linux x86-64 with accessible `/dev/kvm`;
+unsupported configurations fail without falling back. Default fixture and
+deterministic gates remain one-CPU TCG. KVM and TCG series cannot be mixed.
+The literal `raw-build --pvh` path stores disjoint authored segments, with no
+executable bytes imported from qboot; firmware remains hashed host infrastructure.
+
+
+Full raw memory captures retain their filenames, lengths and SHA256 hashes while
+zero blocks are stored as sparse holes. Every rewrite verifies bytes before atomic
+replacement; failure leaves the original dump and marks capture incomplete.
+`memory-storage.json` records logical and allocated sizes. This reduces capture
+storage, never guest memory or image size, and does not remove evidence.

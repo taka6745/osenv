@@ -8,6 +8,23 @@ from .raw_size import account, provenance, report
 
 
 class RawSizeTests(unittest.TestCase):
+    def test_direct_entry_reconstruction_and_corruption(self):
+        base=Path(__file__).resolve().parents[1]/'build'
+        build=next((base/name for name in ('raw-pvh','t023-boot-pvh-segmented') if (base/name).exists()),base/'raw-pvh')
+        if not build.exists():self.skipTest('saved actual direct-entry OS build unavailable')
+        result=account(build)
+        self.assertEqual(result['direct_entry']['loader_bytes'],(build/'pvh.elf').stat().st_size)
+        self.assertGreater(result['direct_entry']['adapter_instruction_data_bytes'],0)
+        for name in ('pvh.elf','pvh-symbols.elf','pvh-inputs.json'):
+            with self.subTest(name=name),tempfile.TemporaryDirectory() as directory:
+                target=Path(directory)/'build';shutil.copytree(build,target)
+                path=target/name
+                if name.endswith('.json'):
+                    data=json.loads(path.read_text());data['adapter_bytes']+=1;path.write_text(json.dumps(data))
+                else:
+                    data=bytearray(path.read_bytes());data[-1]^=1;path.write_bytes(data)
+                with self.assertRaises(ValueError):account(target)
+
     def test_directive_provenance(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/'source.inc'

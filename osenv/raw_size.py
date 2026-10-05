@@ -209,6 +209,37 @@ def account(build):
                             'scope':'Exact minimum among streams in the authored literal128/backref130-distance16 grammar for this fixed decoded kernel, plus this fixed adapter and separate 512-byte BIOS sector with sector rounding. All DP suffix costs, deterministic path and emitted bytes were recomputed and matched to the saved certificate. Existing image attains the bound. Other codecs, kernel changes and adapter changes are outside this proof; no global shortest-program claim. The decoded HTML page is compressed and its original length is not a disk lower bound.'}
     if sum(x['bytes'] for x in result['categories'].values()) != len(image):
         raise ValueError('accounting conservation failed')
+    if 'src/raw/pvh.inc' in manifest['sources']:
+        from .raw_build import pvh_elf, elf
+        combined, all_symbols, direct_ranges = place(paths+[root/'pvh.inc',root/'pvh-pci.inc'],
+                                                   {'kernel_size':len(kernel),'kernel_hash':fnv(kernel)})
+        direct_symbols = {name:value for name,value in all_symbols.items()
+                          if value[1]=='text' and 0x110000 <= value[0] < 0x180000}
+        base = direct_symbols['raw_pvh_entry'][0]
+        direct_cells = {a:b for a,b in combined.items() if a>=base}
+        if direct_ranges != bss or span(combined,0x100000,max(kernelcells)+1) != kernel:
+            raise ValueError('Direct entry changes existing kernel or reservations')
+        segments=[]
+        for address in sorted(direct_cells):
+            if not segments or address != segments[-1][0]+len(segments[-1][1]):
+                segments.append((address,bytearray()))
+            segments[-1][1].append(direct_cells[address])
+        loader=pvh_elf(segments,kernel,base)
+        adapter=span(direct_cells,base,max(direct_cells)+1)
+        if ((build/'pvh.elf').read_bytes()!=loader or
+            (build/'pvh-symbols.elf').read_bytes()!=elf(adapter,base,direct_symbols)):
+            raise ValueError('Direct entry loader/symbol bytes differ from authored source')
+        direct_record=json.loads((build/'pvh-inputs.json').read_text())
+        if (direct_record['sources'] != manifest['sources'] or direct_record['preload'] is not False
+            or direct_record['symbols'] != {n:a for n,(a,s) in direct_symbols.items()}
+            or direct_record['adapter_bytes'] != len(direct_cells)
+            or direct_record['adapter_span_bytes'] != len(adapter)):
+            raise ValueError('Direct entry provenance mismatch')
+        for name in ('pvh.elf','oslab.img','kernel.elf','kernel.bin'):
+            if direct_record['generated_artifacts'].get(name) != sha((build/name).read_bytes()):
+                raise ValueError('Direct entry artifact hash mismatch')
+        result['direct_entry']={'loader_bytes':len(loader),'adapter_instruction_data_bytes':len(direct_cells),
+                                'loader_sha256':sha(loader),'scope':'Optional separate ELF load container; not counted in BIOS disk minimum'}
     return result
 
 

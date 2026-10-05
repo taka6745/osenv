@@ -30,9 +30,11 @@ def validate_body(response, body, expected=None):
         raise ValueError("Restored HTTP response differs")
 
 
-def probe(image, symbols, repeat=3):
+def probe(image, symbols, repeat=3, mode='snapshot'):
     if type(repeat) is not int or not 1 <= repeat <= 20:
         raise ValueError("repeat must be 1..20")
+    if mode not in ('snapshot','resume'):
+        raise ValueError('mode must be snapshot or resume')
     rid = start(
         timeout=120,
         manual=True,
@@ -50,7 +52,9 @@ def probe(image, symbols, repeat=3):
     result = {
         "ok": False,
         "run_id": rid,
-        "scope": "Same-process paused QCOW2 restore; full state read and resumed HTTP. Not cold boot or physical cycles.",
+        "mode":mode,
+        "scope": ("Same-process paused QCOW2 restore" if mode=='snapshot' else "Prepared paused live service resume; CPU/RAM/device power retained")
+                 + "; verified RAM and complete HTTP; includes control/client costs. Not cold boot or physical cycles.",
     }
 
     def owner(**request):
@@ -93,20 +97,16 @@ def probe(image, symbols, repeat=3):
             "original_hex": original,
             "mutated_hex": mutated,
         }
-        owner(operation="snapshot", action="save", tag="http-ready")
+        if mode=='snapshot':owner(operation="snapshot", action="save", tag="http-ready")
         event_offset = (run / "events.jsonl").stat().st_size
         rows = []
         for _ in range(repeat):
-            owner(
-                operation="debug", action="write-memory", address=address, value=mutated
-            )
-            observed = owner(operation="physical-memory", address=address, length=16)[
-                "hex"
-            ]
-            if observed != mutated:
-                raise ValueError("RAM mutation not observed")
+            if mode=='snapshot':
+                owner(operation="debug", action="write-memory", address=address, value=mutated)
+                observed = owner(operation="physical-memory", address=address, length=16)["hex"]
+                if observed != mutated:raise ValueError("RAM mutation not observed")
             begun = time.monotonic()
-            loaded = owner(operation="snapshot", action="load", tag="http-ready")
+            loaded = owner(operation="snapshot", action="load", tag="http-ready") if mode=='snapshot' else None
             restored = owner(operation="physical-memory", address=address, length=16)[
                 "hex"
             ]
@@ -118,9 +118,10 @@ def probe(image, symbols, repeat=3):
                 raise ValueError("Restored HTTP response differs")
             rows.append(
                 {
-                    "load_owner_seconds": loaded["seconds"],
+                    "load_owner_seconds": loaded["seconds"] if loaded else None,
                     "load_call_ram_check_resume_http_seconds": time.monotonic() - begun,
-                    "ram_restored": True,
+                    "ram_restored": True if mode=='snapshot' else None,
+                    "retained_ram_verified": True,
                     "http_exact": True,
                 }
             )
@@ -153,6 +154,7 @@ if __name__ == "__main__":
     parser.add_argument("--image", required=True)
     parser.add_argument("--symbols", required=True)
     parser.add_argument("--repeat", type=int, default=3)
+    parser.add_argument('--mode',choices=['snapshot','resume'],default='snapshot')
     try:
         result = probe(**vars(parser.parse_args()))
     except Exception as error:

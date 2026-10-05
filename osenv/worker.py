@@ -8,6 +8,7 @@ import selectors
 import shutil
 import socket
 import struct
+import sys
 import subprocess
 import time
 import uuid
@@ -93,7 +94,11 @@ def pvh_firmware():
 
 
 def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=None,
-          manual=False, symbols=None, mode='real16', memory=32, network='none', disk_interface=None, timing='virtual', nic_rom=True, nic_model='e1000', minimal_devices=False, boot_kernel=None):
+          manual=False, symbols=None, mode='real16', memory=32, network='none', disk_interface=None, timing='virtual', nic_rom=True, nic_model='e1000', minimal_devices=False, boot_kernel=None, acceleration='tcg'):
+    if acceleration not in ('tcg','kvm'):
+        raise ValueError('Acceleration must be tcg or kvm')
+    if acceleration=='kvm' and (not manual or timing!='realtime' or sys.platform!='linux' or os.uname().machine!='x86_64' or not os.access('/dev/kvm',os.R_OK|os.W_OK)):
+        raise ValueError('KVM requires a manual realtime Linux run with accessible /dev/kvm; no fallback')
     if type(minimal_devices) is not bool or (minimal_devices and not manual):
         raise ValueError('Minimal devices require a manual OS image and a boolean flag')
     if nic_model not in ['e1000', 'e1000e']:
@@ -163,7 +168,7 @@ def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=N
                    'seed': 7, 'expected_value': 42, 'timeout': timeout, 'paused': paused,
                    'manual': manual, 'mode': mode, 'memory_mib': memory, 'network': network,
                    'disk_interface': disk_interface, 'timing': timing, 'nic_rom': nic_rom, 'nic_model': nic_model, 'minimal_devices': minimal_devices,
-                   'boot_route': 'pvh' if boot_kernel else 'bios', 'preload': preload},
+                   'boot_route': 'pvh' if boot_kernel else 'bios', 'preload': preload, 'acceleration':acceleration},
          'socket_directory': str(sockets), 'source_hashes':
          {'osenv/' + p.name: digest(p) for p in sorted(Path(__file__).parent.glob('*.py'))}})
     for name in ['serial.log', 'early.log', 'qemu.log', 'trace.log', 'events.jsonl', 'annotations.jsonl', 'actions.jsonl']:
@@ -254,6 +259,8 @@ class Owner:
         try:
             self.qmp.call('pmemsave', {'val': 0, 'size': self.manifest['input']['memory_mib'] * 1024 * 1024,
                                       'filename': str(target / 'memory.bin')})
+            from .core import compact_memory
+            save(target/'memory-storage.json', compact_memory(target/'memory.bin'))
         except Exception as error:
             errors.append(f'Physical memory dump: {error}')
         if reason == 'panic' and mode == 'real16' and (target / 'gdb.json').exists() and (target / 'memory.bin').exists():
@@ -473,7 +480,8 @@ class Owner:
     def boot(self):
         command([tool('qemu-img'), 'create', '-f', 'qcow2', '-F', 'raw',
                  '-b', self.run / 'disk.img', self.run / 'overlay.qcow2'])
-        config = ['-machine', MACHINE, '-accel', 'tcg,thread=single', '-cpu', 'qemu64',
+        acceleration = self.manifest['input'].get('acceleration','tcg')
+        config = ['-machine', MACHINE, '-accel', 'tcg,thread=single' if acceleration=='tcg' else 'kvm', '-cpu', 'qemu64',
                   '-smp', '1', '-m', f'{self.manifest["input"]["memory_mib"]}M', '-display', 'none', '-nic', 'none',
                   '-monitor', 'none', '-no-reboot', '-no-shutdown',
                   '-d', 'guest_errors', '-D', str(self.run / 'trace.log'),
@@ -535,7 +543,7 @@ class Owner:
         self.manifest['runtime_tools'] = {name: command(
             [tool(name), '--version']).splitlines()[0] for name in ['qemu-system-x86_64', 'gdb', 'nasm']}
         self.manifest['machine'] = {'type': MACHINE, 'cpu': 'qemu64', 'ram_mib': self.manifest['input']['memory_mib'],
-                                    'acceleration': 'tcg', 'cpus': 1, 'network': self.manifest['input']['network'],
+                                    'acceleration': acceleration, 'cpus': 1, 'network': self.manifest['input']['network'],
                                     'rtc': '2000-01-01T00:00:00', 'record_replay': False,
                                     'boot_route': ('pvh-qboot-preload' if preload else 'pvh-qboot') if pvh else 'bios-disk',
                                     'timing': self.manifest['input'].get('timing', 'virtual')}

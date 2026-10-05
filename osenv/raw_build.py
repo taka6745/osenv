@@ -176,7 +176,36 @@ def packed_payload(kernel, path, source):
     return payload, decoder, symbols, metadata, proof
 
 
-def build(project, output, packed=False):
+def pvh_elf(segments, kernel, entry):
+    """ELF32 load/note container; no executable bytes are generated here."""
+    header_size, ph_size, count = 52, 32, len(segments)+2
+    if not segments or count > 64:
+        raise ValueError('Bounded nonempty PVH segments required')
+    note = struct.pack('<III4sI', 4, 4, 18, b'Xen\0', entry)
+    note_offset = header_size + ph_size*count
+    header = struct.pack('<16sHHIIIIIHHHHHH', b'\x7fELF\x01\x01\x01'+bytes(9),
+                         2, 3, 1, entry, header_size, 0, 0, header_size, ph_size, count, 0, 0, 0)
+    rows = [(4, note_offset, 0, 0, len(note), len(note), 4, 4)]
+    payloads = []
+    cursor = note_offset+len(note)
+    for base,data in segments+[(0x100000,kernel)]:
+        if not data:
+            raise ValueError('Empty PVH load segment')
+        cursor = (cursor+15)&~15
+        rows.append((1,cursor,base,base,len(data),len(data),5,1))
+        payloads.append((cursor,data))
+        cursor += len(data)
+    programs = b''.join(struct.pack('<IIIIIIII', *row) for row in rows)
+    output = bytearray(cursor)
+    output[:len(header)] = header
+    output[header_size:note_offset] = programs
+    output[note_offset:note_offset+len(note)] = note
+    for start,data in payloads:
+        output[start:start+len(data)] = data
+    return bytes(output)
+
+
+def build(project, output, packed=False, pvh=False):
     project, output = Path(project).resolve(), Path(output).resolve()
     if output == project or project in output.parents:
         raise ValueError('generated output must remain outside OS checkout')
@@ -185,6 +214,8 @@ def build(project, output, packed=False):
     paths=[root/'boot.inc']+kernel_paths
     if packed:
         paths.append(root/'packed.inc')
+    if pvh:
+        paths += [root/'pvh.inc', root/'pvh-pci.inc']
     for path in paths:
         if project not in path.resolve().parents:
             raise ValueError('guest source escapes repository')
@@ -226,6 +257,36 @@ def build(project, output, packed=False):
         (output/'packed-stub.elf').write_bytes(elf(payload[:packing['stub_bytes']],0x100000,{n:v for n,v in packed_symbols.items() if v[0] >= 0x100000}))
         (output/'packing-proof.json').write_text(json.dumps(proof,indent=2)+'\n')
     (output/'manifest.json').write_text(json.dumps(report,indent=2)+'\n')
+    if pvh:
+        direct_paths = [root/'pvh.inc', root/'pvh-pci.inc']
+        combined, all_symbols, direct_ranges = place(kernel_paths+direct_paths,
+            {'kernel_size':len(kernel), 'kernel_hash':fnv(kernel)}, contents=contents)
+        direct_symbols = {name:value for name,value in all_symbols.items()
+                          if value[1] == 'text' and 0x110000 <= value[0] < 0x180000}
+        base = direct_symbols['raw_pvh_entry'][0]
+        direct_cells = {a:b for a,b in combined.items() if a >= base}
+        if direct_ranges != ranges or min(direct_cells) != base or not 0x110000 <= base <= max(direct_cells) < 0x180000:
+            raise ValueError('PVH adapter outside verified low usable RAM, or overlaps kernel/state')
+        if span(combined, 0x100000, max(cells)+1) != kernel:
+            raise ValueError('PVH source changed the existing kernel bytes')
+        adapter = span(direct_cells, base, max(direct_cells)+1)
+        entry = direct_symbols['raw_pvh_entry'][0]
+        segments = []
+        for address in sorted(direct_cells):
+            if not segments or address != segments[-1][0]+len(segments[-1][1]):
+                segments.append((address, bytearray()))
+            segments[-1][1].append(direct_cells[address])
+        loader = pvh_elf(segments, kernel, entry)
+        (output/'pvh.elf').write_bytes(loader)
+        (output/'pvh-symbols.elf').write_bytes(elf(adapter, base, direct_symbols))
+        provenance = {'route':'authored literal PHYS32 entry; complete kernel embedded; no guest compiler',
+                      'preload':False, 'sources':report['sources'],
+                      'generated_artifacts':{name:hashlib.sha256((output/name).read_bytes()).hexdigest()
+                                            for name in ('pvh.elf','oslab.img','kernel.elf','kernel.bin')},
+                      'symbols':{name:address for name,(address,_) in direct_symbols.items()},
+                      'adapter_bytes':len(direct_cells),'adapter_span_bytes':len(adapter),
+                      'cpu_modes':{'pvh32':[base,max(direct_cells)+1]}}
+        (output/'pvh-inputs.json').write_text(json.dumps(provenance,indent=2)+'\n')
     return report
 
 
@@ -234,5 +295,6 @@ if __name__ == '__main__':
     parser.add_argument('--project',required=True)
     parser.add_argument('--output',required=True)
     parser.add_argument('--packed',action='store_true')
+    parser.add_argument('--pvh',action='store_true')
     args=parser.parse_args()
-    print(json.dumps(build(args.project,args.output,args.packed),indent=2))
+    print(json.dumps(build(args.project,args.output,args.packed,args.pvh),indent=2))

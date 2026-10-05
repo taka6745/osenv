@@ -41,6 +41,32 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+
+def compact_memory(path):
+    """Preserve exact raw dump bytes while leaving all-zero blocks unallocated."""
+    path=Path(path);original=path.stat();expected=hashlib.sha256()
+    with tempfile.NamedTemporaryFile(dir=path.parent, prefix='memory-sparse-', delete=False) as out:
+        temporary=Path(out.name)
+        try:
+            with path.open('rb') as source:
+                while block:=source.read(65536):
+                    expected.update(block)
+                    if block==bytes(len(block)):out.seek(len(block),1)
+                    else:out.write(block)
+            out.truncate(original.st_size);out.flush();os.fsync(out.fileno())
+            actual=hashlib.sha256()
+            with temporary.open('rb') as source:
+                while block:=source.read(1048576):actual.update(block)
+            if expected.digest()!=actual.digest():raise ValueError('Compacted memory bytes differ')
+            os.chmod(temporary,original.st_mode & 0o777)
+            os.utime(temporary,ns=(original.st_atime_ns,original.st_mtime_ns))
+            os.replace(temporary,path)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return {'bytes':original.st_size,'sha256':expected.hexdigest(),
+            'allocated_before':original.st_blocks*512,'allocated_after':path.stat().st_blocks*512}
+
+
 def save(path, data):
     path = Path(path)
     temporary = path.with_suffix(path.suffix + '.tmp')

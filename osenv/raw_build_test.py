@@ -1,8 +1,9 @@
 """Exercise byte-placement safety; these tests provide no guest implementations."""
 import tempfile
 import unittest
+import struct
 from pathlib import Path
-from .raw_build import place, fnv, elf, build
+from .raw_build import place, fnv, elf, build, pvh_elf
 
 
 class RawPlacementTests(unittest.TestCase):
@@ -81,6 +82,29 @@ class RawPlacementTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'initialized state'):
                 build(project,Path(directory)/'output')
             self.assertFalse((Path(directory)/'output').exists())
+
+    def test_pvh_segments_preserve_literal_data_without_holes(self):
+        # Data-only container test: no executable adapter or OS is simulated.
+        segments = [(0x110000,b'abc'),(0x111000,b'defg')]
+        raw = pvh_elf(segments,b'kernel',0x110000)
+        self.assertEqual(raw[:7],b'\x7fELF\x01\x01\x01')
+        self.assertEqual(struct.unpack_from('<I',raw,24)[0],0x110000)
+        offset=struct.unpack_from('<I',raw,28)[0]
+        count=struct.unpack_from('<H',raw,44)[0]
+        self.assertEqual(count,4)
+        loads=[]
+        for i in range(count):
+            kind,start,va,pa,length,memory,flags,alignment=struct.unpack_from('<IIIIIIII',raw,offset+32*i)
+            self.assertLessEqual(start+length,len(raw))
+            if kind==1:
+                self.assertEqual(length,memory)
+                self.assertEqual(va,pa)
+                loads.append((pa,raw[start:start+length]))
+            else:
+                self.assertEqual(raw[start:start+length],struct.pack('<III4sI',4,4,18,b'Xen\0',0x110000))
+        self.assertEqual(loads,segments+[(0x100000,b'kernel')])
+        self.assertLess(len(raw),512)
+        with self.assertRaises(ValueError):pvh_elf([],b'kernel',0x110000)
 
 
 if __name__=='__main__':
