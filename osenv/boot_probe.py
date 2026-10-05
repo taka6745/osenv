@@ -8,12 +8,12 @@ from pathlib import Path
 from .worker import start
 from .core import get_run
 from .__main__ import call
+from .boot_timing import event_wall_ns
 
 
 def interval(events):
     def stamp(event):
-        t = event["timestamp"]
-        return t["seconds"] + t["microseconds"] / 1e6
+        return event_wall_ns(event)
 
     resume = next(e for e in events if e["event"] == "RESUME")
     stop = next(e for e in events if e["event"] == "STOP" and stamp(e) >= stamp(resume))
@@ -22,7 +22,7 @@ def interval(events):
         for e in events
     ):
         raise ValueError("Unexpected reset during measured boot")
-    return stamp(stop) - stamp(resume)
+    return (stamp(stop) - stamp(resume)) / 1_000_000_000
 
 
 def probe(

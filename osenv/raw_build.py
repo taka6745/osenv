@@ -141,13 +141,50 @@ def elf(data, base, symbols):
     return output
 
 
-def build(project, output):
+def packed_payload(kernel, path, source):
+    """Optimal authored-format data packing; executable adapter bytes stay literal."""
+    from .raw_codec import encode, decode
+    compressed, proof = encode(kernel)
+    if decode(compressed, len(kernel)) != kernel:
+        raise ValueError('packing round trip failed')
+    keys = ('blob_source','relocated_bytes','input_start','input_end',
+            'decoded_kernel_end','decoded_kernel_size','decoded_kernel_hash')
+    _, symbols, _ = place([path],dict.fromkeys(keys,0),contents={path:source})
+    stub_size = symbols['packed_stub_end'][0]-0x100000
+    decoder_size = symbols['packed_decoder_end'][0]-0x80000
+    relocated = decoder_size+len(compressed)
+    if not 0 < stub_size <= 512 or not 0 < decoder_size <= 4096 or not 0 < relocated <= 65536:
+        raise ValueError('packed adapter outside staging bounds')
+    values = {'blob_source':0x100000+stub_size,'relocated_bytes':relocated,
+              'input_start':0x80000+decoder_size,'input_end':0x80000+relocated,
+              'decoded_kernel_end':0x100000+len(kernel),
+              'decoded_kernel_size':len(kernel),'decoded_kernel_hash':fnv(kernel)}
+    cells, symbols, _ = place([path],values,contents={path:source})
+    if len(cells) != stub_size+decoder_size or any(not (0x80000 <= a < 0x80000+decoder_size or 0x100000 <= a < 0x100000+stub_size) for a in cells):
+        raise ValueError('unexpected packed adapter placement')
+    stub = span(cells,0x100000,0x100000+stub_size)
+    decoder = span(cells,0x80000,0x80000+decoder_size)
+    payload = stub+decoder+compressed
+    if len(payload) > 0xfe00 or values['input_end'] > 0x90000:
+        raise ValueError('packed image outside BIOS/staging bounds')
+    metadata = {'format':'authored literal1..128/match3..130/distance16',
+                'stub_bytes':stub_size,'decoder_bytes':decoder_size,
+                'compressed_bytes':len(compressed),'payload_bytes':len(payload),
+                'values':values,'symbols':{n:a for n,(a,s) in symbols.items()},
+                'optimal_stream_bytes':proof['optimal_bytes'],
+                'codec_sha256':hashlib.sha256(Path(__file__).with_name('raw_codec.py').read_bytes()).hexdigest()}
+    return payload, decoder, symbols, metadata, proof
+
+
+def build(project, output, packed=False):
     project, output = Path(project).resolve(), Path(output).resolve()
     if output == project or project in output.parents:
         raise ValueError('generated output must remain outside OS checkout')
     root = project/'src/raw'
     kernel_paths = [root/name for name in ('entry.inc','primitives.inc','driver.inc','network.inc','irq.inc')]
     paths=[root/'boot.inc']+kernel_paths
+    if packed:
+        paths.append(root/'packed.inc')
     for path in paths:
         if project not in path.resolve().parents:
             raise ValueError('guest source escapes repository')
@@ -159,8 +196,12 @@ def build(project, output):
     if any(start < 0x180000 or end > 0x1a0000 for start,end in ranges.get('bss',[])):
         raise ValueError('BSS outside initialized state window')
     kernel = span(cells, 0x100000, max(cells)+1)
-    sectors = (len(kernel)+511)//512
-    bootcells, bootsymbols, _ = place([root/'boot.inc'], {'kernel_size':len(kernel), 'kernel_sectors':sectors, 'kernel_hash':fnv(kernel)}, contents=contents)
+    payload = kernel
+    packing = None
+    if packed:
+        payload, decoder, packed_symbols, packing, proof = packed_payload(kernel,root/'packed.inc',contents[root/'packed.inc'])
+    sectors = (len(payload)+511)//512
+    bootcells, bootsymbols, _ = place([root/'boot.inc'], {'kernel_size':len(payload), 'kernel_sectors':sectors, 'kernel_hash':fnv(payload)}, contents=contents)
     if min(bootcells) != 0x7c00 or max(bootcells) != 0x7dff:
         raise ValueError('boot sector must occupy exactly512 bytes')
     boot = span(bootcells,0x7c00,0x7e00)
@@ -174,9 +215,16 @@ def build(project, output):
     (output/'kernel.bin').write_bytes(kernel)
     (output/'kernel.elf').write_bytes(elf(kernel,0x100000,symbols))
     (output/'boot.elf').write_bytes(elf(boot,0x7c00,bootsymbols))
-    image=boot+kernel+bytes((-len(kernel))%512)
+    image=boot+payload+bytes((-len(payload))%512)
     (output/'oslab.img').write_bytes(image)
     report={'route':'hand-placed hexadecimal bytes; no compiler/assembler/linker', 'kernel_bytes':len(kernel),'image_bytes':len(image),'padding_bytes':len(kernel)-len(cells), 'image_sha256':hashlib.sha256(image).hexdigest(),'sources':{str(p.relative_to(project)):hashlib.sha256(sourcebytes[p]).hexdigest() for p in paths},'symbols':{n:a for n,(a,s) in symbols.items()},'boot_symbols':{n:a for n,(a,s) in bootsymbols.items()},'bss':ranges,'cpu_modes':{'boot16':[0x7c00,bootsymbols['boot_protected'][0]],'boot32':[bootsymbols['boot_protected'][0],0x7e00],'kernel32':[0x100000,symbols['raw_entry'][0]],'kernel64':[symbols['raw_entry'][0],max(cells)+1]},'writer_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'python_version':sys.version}
+    if packed:
+        report['packing'] = packing
+        report['cpu_modes'].update({'packed_stub32':[0x100000,0x100000+packing['stub_bytes']], 'packed_decode32':[0x80000,0x80000+packing['decoder_bytes']]})
+        (output/'packed.bin').write_bytes(payload)
+        (output/'packed.elf').write_bytes(elf(decoder,0x80000,{n:v for n,v in packed_symbols.items() if 0x80000 <= v[0] <= 0x80000+len(decoder)}))
+        (output/'packed-stub.elf').write_bytes(elf(payload[:packing['stub_bytes']],0x100000,{n:v for n,v in packed_symbols.items() if v[0] >= 0x100000}))
+        (output/'packing-proof.json').write_text(json.dumps(proof,indent=2)+'\n')
     (output/'manifest.json').write_text(json.dumps(report,indent=2)+'\n')
     return report
 
@@ -185,5 +233,6 @@ if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--project',required=True)
     parser.add_argument('--output',required=True)
+    parser.add_argument('--packed',action='store_true')
     args=parser.parse_args()
-    print(json.dumps(build(args.project,args.output),indent=2))
+    print(json.dumps(build(args.project,args.output,args.packed),indent=2))

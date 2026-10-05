@@ -17,6 +17,7 @@ def summarize(results):
     if len(routes) != 1:
         raise ValueError("Boot route changed between repetitions")
     route = routes.pop()
+    release_times = [(r.get('cpu_release_to_returned_request') or {}).get('cpu_release_to_returned_request_seconds') for r in results]
     return {
         "ok": True,
         "image_sha256": results[0]["image_sha256"],
@@ -32,6 +33,8 @@ def summarize(results):
         "median_resume_call_to_response_seconds": statistics.median(
             r["resume_call_to_first_response_seconds"] for r in results
         ),
+        "cpu_release_to_returned_request_seconds": release_times,
+        "median_cpu_release_to_returned_request_seconds": statistics.median(release_times) if all(x is not None for x in release_times) else None,
         "median_latency_seconds": [r["latency_seconds"]["median"] for r in results],
         "p99_latency_seconds": [r["latency_seconds"]["p99"] for r in results],
         "captured_request_to_response_median_seconds": [

@@ -228,3 +228,28 @@ execution, real DMA/IRQ behavior, malformed protocol boundaries and both NIC wir
 paths. The fixture gate remains separate. Optional individual `osenv.raw_*_test`
 modules retain failures and isolated deliberate mutations. Raw guest service
 limits are described in the OS checkout; host inspection invents no guest services.
+
+
+Add `--packed` to `raw-build` for the authored bounded decoder and optimal
+literal/back-reference stream. `raw-size --build BUILD --output NEW_DIR`
+reconstructs saved sources and every disk byte, checks hashes/symbols/BSS and
+recomputes the complete suffix-cost certificate. Expanded kernel bytes, ELF
+containers and reserved BSS are accounted separately from disk storage. The
+accepted T022 image is 8,192 bytes / 65,536 bits: 512-byte BIOS sector,
+187-byte adapter, 7,438-byte optimal stream and 55-byte sector fill. This is a
+proved minimum for this fixed kernel, codec grammar, adapter and sector layout;
+a global shortest executable remains unproved.
+
+Boot timing now uses integer host-epoch QMP RESUME to independently verified
+complete client receipt, with paired monotonic samples and rejection of clock
+drift, resets or stops. QEMU packet captures use a virtual clock and are never
+subtracted from QMP epoch timestamps. Controller launch, CPU release, kernel
+entry, network-loop entry and completed HTTP remain distinct measurements;
+physical power-on is unmeasured.
+
+The exact T022 image passed local raw/decoder gates and dedicated homelab QEMU
+acceptance. Five matched local TCG runs returned 50,000 verified responses at
+6,680.7 requests/s; median CPU release to complete HTTP was 53.543 ms. Separate
+breakpoint runs measured 48.605 ms to raw_entry and 50.238 ms to raw_loop. These
+are emulator measurements, not physical throughput. Saved evidence remains in
+local/t022; TASKS.md records the accepted image identity and test scope.

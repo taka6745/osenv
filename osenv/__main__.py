@@ -51,7 +51,11 @@ def parser():
     item = sub.add_parser('raw-build')
     item.add_argument('--project',required=True)
     item.add_argument('--output',required=True)
+    item.add_argument('--packed',action='store_true')
     item = sub.add_parser('raw-test')
+    item.add_argument('--build',required=True)
+    item.add_argument('--output',required=True)
+    item = sub.add_parser('raw-size')
     item.add_argument('--build',required=True)
     item.add_argument('--output',required=True)
     item = sub.add_parser('project-build')
@@ -190,10 +194,13 @@ def dispatch(a):
         return doctor()
     if operation == 'raw-build':
         from .raw_build import build as raw_build
-        return {'ok':True,**raw_build(a.project,a.output)}
+        return {'ok':True,**raw_build(a.project,a.output,a.packed)}
     if operation == 'raw-test':
         from .raw_test import test as raw_test
         return raw_test(a.build,a.output)
+    if operation == 'raw-size':
+        from .raw_size import write_accounting
+        return write_accounting(a.build,a.output)
     if operation in ['project-build', 'project-test', 'project-deploy']:
         from .project import project_build, project_test, project_deploy
         if operation == 'project-build':

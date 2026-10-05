@@ -30,8 +30,8 @@ jobs:
         run: python3 -m osenv doctor
       - name: Boot and debugger gate
         run: python3 -m osenv test > gate.json
-      - name: Literal-byte placement and symbol-container regressions
-        run: python3 -m unittest osenv.raw_build_test -v
+      - name: Literal placement, optimal codec, bit accounting and clock regressions
+        run: python3 -m unittest osenv.raw_build_test osenv.raw_codec_test osenv.raw_size_test osenv.boot_timing_test -v
       - name: Publish verdict and small diagnostics
         if: always()
         uses: actions/upload-artifact@v4

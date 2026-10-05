@@ -16,6 +16,7 @@ from .worker import start
 from .core import get_run
 from .__main__ import call
 from .wire_cost import wire_cost
+from .boot_timing import sample_clock, returned_request_timing
 
 
 def dhcp_ack_seen(path):
@@ -128,6 +129,7 @@ def stress(
     resume_started = None
     resume_to_response = None
     controller_ready = None
+    boot_before = boot_complete = None
     cases = []
     try:
         while not production and "OSL1 SERVING" not in (run / "serial.log").read_text():
@@ -142,6 +144,7 @@ def stress(
 
         if controlled_boot:
             controller_ready = time.monotonic() - begun
+            boot_before = sample_clock()
             resume_started = time.monotonic()
             assert call(rid, {"operation": "debug", "action": "resume"})["ok"]
 
@@ -210,6 +213,7 @@ def stress(
             # Abandoning repeated 100ms clients left delayed NAT SYN retries
             # competing with the load on the OS's single connection slot.
             expected, _ = fetch(root, timeout=max(0.001, deadline - time.monotonic()))
+            boot_complete = sample_clock()
             finished_boot = time.monotonic()
             boot_seconds = finished_boot - begun
             if resume_started is not None:
@@ -313,6 +317,10 @@ def stress(
         ordered = sorted(samples)
         wire = wire_cost(run / "network.pcap", expected)
         assert wire["matched_response_flows"] >= requests
+        boot_timing = None
+        if controlled_boot:
+            events = [json.loads(line) for line in (run / 'events.jsonl').read_text().splitlines()]
+            boot_timing = returned_request_timing(events, boot_before, boot_complete)
         result = {
             "ok": True,
             "run_id": rid,
@@ -320,6 +328,7 @@ def stress(
             "boot_seconds": boot_seconds,
             "controller_ready_seconds": controller_ready,
             "resume_call_to_first_response_seconds": resume_to_response,
+            "cpu_release_to_returned_request": boot_timing,
             "launch_to_captured_DHCP_ACK_seconds": network_ready_seconds,
             "image_sha256": hashlib.sha256(Path(image).read_bytes()).hexdigest(),
             "response_sha256": hashlib.sha256(expected).hexdigest(),

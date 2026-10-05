@@ -173,3 +173,23 @@ probes now use realtime guest clocks; virtual-clock deadline expiration remains
 captured as a diagnosed experiment, with unchanged assertions and guest deadlines.
 Matched 30,000-response measurements, independent dispatch counts, compression
 round trips and graphs are retained in local/t021 and t021-instructions.
+
+T022 — Goal: deterministic raw-image bit accounting and honest boot/service timing.
+Interface: raw_size saved-source reconstruction; integer QMP/client clock intervals.
+Prerequisites: immutable build sources, actual disk bytes and matching test verdicts.
+Acceptance: complete byte provenance and constrained minimum proof, corrupted
+input rejection, distinct controller/CPU/client clocks, unchanged actual-image
+gates, matched measurements and exact-image homelab.
+Provenance: independent standard-library codec/accounting/clock logic from the
+authored oslab format; no external guest implementation imported.
+Results: exact image afef5c6cb0699f307bad28bc618c10432aca194afc2d3daa2b151c94b868437e
+passed local raw/decoder gates and dedicated homelab QEMU acceptance. Its 8,192
+bytes / 65,536 bits comprise BIOS512 + adapter187 + optimal stream7438 + fill55.
+Recomputed full DP certificate proves the codec-family minimum for this fixed
+kernel/adapter/sector layout; global shortest-program minimum remains unproved.
+Host regressions reject corrupted streams, certificates, manifests and clock
+intervals; source audits passed. Five matched local TCG runs verified 50,000
+responses at 6680.7 RPS and 53.543 ms median CPU-release-to-complete-HTTP.
+Separate QMP breakpoint probes measured raw_entry 48.605 ms and raw_loop 50.238 ms.
+PCAP virtual time is kept separate from host epoch/monotonic time; physical
+power-on and physical throughput are unmeasured. Evidence: local/t022.
