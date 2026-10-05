@@ -52,3 +52,19 @@ now supports 82574 legacy DMA/PIC. Four matched final-image runs: e1000
 e1000 default for throughput; e1000e is optional. Both production/debug wire
 peers and actual 82574 IRQ rearming passed, along with exact-image codec and
 integrated OS gates. Reproduced actual VM preserved image/NIC/clock settings.
+
+
+T017 — Goal: identify actual OS instruction/idle/serving bottlenecks.
+Interface: optional authored host QEMU plugin, ELF range input and CSV phase output.
+Prerequisites: installed QEMU 11 SDK, one CPU, real profile-enabled OS image.
+Acceptance: real idle/load runs, independent counter agreement, invalid-install
+rejection and existing controller gates. Provenance: QEMU plugin API and Intel
+optimization manual; no imported guest source or linked third-party libraries.
+Result: inline/callback counts agree in all five phases before/after tuning;
+unsupported CPU count, absent marker and existing output are rejected. Real
+images verified 110,000 production responses. Dispatches/request 53402→12692;
+final 6474 requests/s, median 143 µs, p99 231 µs, 12,800-byte image. Actual wire,
+boot/fault/recovery and decoder gates passed; harness 18 gates, 15 unit tests,
+source audits and deliberate copy/checksum mutants passed. Optional plugin SDK
+is host-only; default controller needs no new dependency. Graphs/raw data remain
+local outside oslab. No physical cycle/cache or homelab completion claim.

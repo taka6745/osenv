@@ -151,3 +151,6 @@ handshake ACK, request and FIN. Normal socket clients may send additional frames
 `--nic-model e1000e` selects the guest's authored 82574 legacy interface in
 `run`, `web-test`, `osenv.web_stress` and `osenv.irq_test`. Default remains e1000.
 Saved reproduction/recovery preserves model, timing and ROM configuration.
+
+Optional [host instruction profiling](tools/instruction_profile.md) counts real
+QEMU dispatches by ELF symbol; it adds no guest code and is separate from speed tests.
