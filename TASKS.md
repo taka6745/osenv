@@ -152,3 +152,24 @@ and three real overlap regressions now reject them. Build flags participate in
 identity and explicitly select raw headers. Production TCG throughput remains
 comparable; 45.1% fewer debug/no-LTO dispatches are not physical cycles/cache.
 Reports/graphs/rejected attempts remain in local/t020 and sibling evidence dirs.
+
+
+T021 — Goal: build and inspect an entirely hand-encoded OS without guest compilation.
+Interface: raw-build/raw-test JSON CLI; external byte placement/fixups, separate
+ELF symbols and CPU-mode ranges, immutable source snapshots and real-image gates.
+Prerequisites: literal project-authored byte sources, pinned QEMU, actual CPU/NIC
+and independent packet peer. Acceptance: reject malformed byte fields and branch
+overflow; actual full BIOS boot, guarded execution, DMA/IRQ/clock, network faults,
+CPU faults/hangs and preserved cold recovery; matched performance and homelab.
+Provenance: Python standard library, existing authored controller/oracles; no
+instruction generation, guest stubs or extracted compiled implementations.
+Results: actual complete raw image boot/clock/primitive/DMA/IRQ/network/both-NIC
+gates passed locally and on dedicated homelab QEMU; exact image/symbol hashes
+matched. Homelab also passed 1,000 responses, boundaries and timeout recovery.
+Literal placement rejects BSS/code aliases, overlapping state, address overflow,
+bad fields and branch overflow; regression tests cover actual failures.
+Acceptance refuses optimized Python assertions. Peer wall-time loss/window
+probes now use realtime guest clocks; virtual-clock deadline expiration remains
+captured as a diagnosed experiment, with unchanged assertions and guest deadlines.
+Matched 30,000-response measurements, independent dispatch counts, compression
+round trips and graphs are retained in local/t021 and t021-instructions.

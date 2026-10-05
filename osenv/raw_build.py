@@ -1,0 +1,189 @@
+"""Place project-authored hexadecimal bytes and fixed-width address fields only."""
+import argparse
+import hashlib
+import json
+import re
+import struct
+import sys
+from pathlib import Path
+
+WIDTH = {'abs16': 2, 'abs32': 4, 'abs64': 8, 'rel8': 1, 'rel16': 2, 'rel32': 4,
+         'value16': 2, 'value32': 4}
+
+
+def place(paths, values=None, contents=None):
+    values = values or {}
+    symbols, cells, fixes, ranges = {}, {}, [], {}
+    section, cursor = 'text', None
+    for path in paths:
+        source = contents[path] if contents is not None else Path(path).read_text()
+        for number, raw in enumerate(source.splitlines(), 1):
+            line = raw.split(';', 1)[0].strip()
+            if not line:
+                continue
+            where = f'{path}:{number}'
+            if line.startswith('.section '):
+                section = line.split()[1]
+                if section not in ('text', 'bss'):
+                    raise ValueError(f'{where}: unsupported section')
+                cursor = None
+                continue
+            if line.startswith('.org '):
+                address = int(line.split()[1], 16)
+                if not 0 <= address < 1 << 64:
+                    raise ValueError(f'{where}: address outside 64-bit range')
+                if cursor is not None and address < cursor:
+                    raise ValueError(f'{where}: backward placement')
+                cursor = address
+                continue
+            if cursor is None:
+                raise ValueError(f'{where}: address required')
+            if line.startswith('@'):
+                name = line[1:]
+                if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) or name in symbols:
+                    raise ValueError(f'{where}: invalid or duplicate label')
+                symbols[name] = (cursor, section)
+                continue
+            if line.startswith('.zero ') or line.startswith('.align '):
+                op, arg = line.split()
+                n = int(arg)
+                if n < 0 or n > 1048576 or (op == '.align' and (not n or n & (n-1))):
+                    raise ValueError(f'{where}: invalid reservation')
+                count = n if op == '.zero' else (-cursor) % n
+                tokens = ['00'] * count if section == 'text' else []
+                if section == 'bss':
+                    if cursor+count > 1 << 64:
+                        raise ValueError(f'{where}: reservation outside 64-bit range')
+                    if any(cursor <= a < cursor+count for a in cells) or any(cursor < end and start < cursor+count for start,end in ranges.get('bss',[]) if count):
+                        raise ValueError(f'{where}: overlapping reservation')
+                    ranges.setdefault(section, []).append((cursor, cursor+count))
+                    cursor += count
+                    continue
+            else:
+                tokens = line.split()
+            for token in tokens:
+                if section != 'text':
+                    raise ValueError(f'{where}: BSS contains bytes')
+                if re.fullmatch(r'[0-9a-fA-F]{2}', token):
+                    data = bytes.fromhex(token)
+                elif ':' in token and token.split(':')[0] in WIDTH:
+                    kind, name = token.split(':', 1)
+                    fixes.append((cursor, kind, name, where))
+                    data = bytes(WIDTH[kind])
+                else:
+                    raise ValueError(f'{where}: invalid byte or field {token!r}')
+                for byte in data:
+                    if cursor >= 1 << 64:
+                        raise ValueError(f'{where}: byte outside 64-bit range')
+                    if cursor in cells or any(start <= cursor < end for start,end in ranges.get('bss',[])):
+                        raise ValueError(f'{where}: overlapping bytes')
+                    cells[cursor] = byte
+                    cursor += 1
+    for address, kind, name, where in fixes:
+        width = WIDTH[kind]
+        if kind.startswith('value'):
+            if name not in values:
+                raise ValueError(f'{where}: missing build field {name}')
+            value = values[name]
+        else:
+            if name not in symbols:
+                raise ValueError(f'{where}: unresolved {name}')
+            value = symbols[name][0]
+        relative = kind.startswith('rel')
+        if relative:
+            value -= address + width
+        low, high = (-(1 << (width*8-1)), (1 << (width*8-1))-1) if relative else (0, (1 << (width*8))-1)
+        if not low <= value <= high:
+            raise ValueError(f'{where}: {kind} overflow {value}')
+        for i, byte in enumerate(value.to_bytes(width, 'little', signed=relative)):
+            cells[address+i] = byte
+    return cells, symbols, ranges
+
+
+def span(cells, start, end):
+    if end <= start or end-start > 1048576:
+        raise ValueError('invalid image span')
+    return bytes(cells.get(i, 0) for i in range(start, end))
+
+
+def fnv(data):
+    value = 2166136261
+    for byte in data:
+        value = ((value ^ byte) * 16777619) & 0xffffffff
+    return value
+
+
+def elf(data, base, symbols):
+    """Write a conventional ELF64 symbol container; executable bytes are unchanged."""
+    names = bytearray(b'\0')
+    records = bytearray(bytes(24))
+    for name, (address, section) in sorted(symbols.items(), key=lambda item: item[1][0]):
+        offset = len(names)
+        names.extend(name.encode()+b'\0')
+        records.extend(struct.pack('<IBBHQQ', offset, 0x10, 0, 1 if section == 'text' else 2, address, 0))
+    shnames = b'\0.text\0.bss\0.symtab\0.strtab\0.shstrtab\0'
+    output = bytearray(bytes(64))
+    textoff = len(output); output.extend(data)
+    symoff = len(output); output.extend(records)
+    stroff = len(output); output.extend(names)
+    shstroff = len(output); output.extend(shnames)
+    output.extend(bytes((-len(output)) % 8))
+    shoff = len(output)
+    sections = [(0,0,0,0,0,0,0,0,0,0),
+                (1,1,6,base,textoff,len(data),0,0,1,0),
+                (7,8,3,0x180000,0,0x20000,0,0,4096,0),
+                (12,2,0,0,symoff,len(records),4,1,8,24),
+                (20,3,0,0,stroff,len(names),0,0,1,0),
+                (28,3,0,0,shstroff,len(shnames),0,0,1,0)]
+    for record in sections:
+        output.extend(struct.pack('<IIQQQQIIQQ', *record))
+    output[:64] = struct.pack('<16sHHIQQQIHHHHHH', b'\x7fELF\x02\x01\x01'+bytes(9),2,62,1,base,0,shoff,0,64,0,0,64,6,5)
+    return output
+
+
+def build(project, output):
+    project, output = Path(project).resolve(), Path(output).resolve()
+    if output == project or project in output.parents:
+        raise ValueError('generated output must remain outside OS checkout')
+    root = project/'src/raw'
+    kernel_paths = [root/name for name in ('entry.inc','primitives.inc','driver.inc','network.inc','irq.inc')]
+    paths=[root/'boot.inc']+kernel_paths
+    for path in paths:
+        if project not in path.resolve().parents:
+            raise ValueError('guest source escapes repository')
+    sourcebytes={p:p.read_bytes() for p in paths}
+    contents={p:b.decode('utf-8') for p,b in sourcebytes.items()}
+    cells, symbols, ranges = place(kernel_paths, contents=contents)
+    if min(cells) != 0x100000 or max(cells) >= 0x10fe00:
+        raise ValueError('kernel outside bounded BIOS loading window')
+    if any(start < 0x180000 or end > 0x1a0000 for start,end in ranges.get('bss',[])):
+        raise ValueError('BSS outside initialized state window')
+    kernel = span(cells, 0x100000, max(cells)+1)
+    sectors = (len(kernel)+511)//512
+    bootcells, bootsymbols, _ = place([root/'boot.inc'], {'kernel_size':len(kernel), 'kernel_sectors':sectors, 'kernel_hash':fnv(kernel)}, contents=contents)
+    if min(bootcells) != 0x7c00 or max(bootcells) != 0x7dff:
+        raise ValueError('boot sector must occupy exactly512 bytes')
+    boot = span(bootcells,0x7c00,0x7e00)
+    if boot[-2:] != b'\x55\xaa':
+        raise ValueError('missing boot signature')
+    output.mkdir(parents=True,exist_ok=False)
+    for path, data in sourcebytes.items():
+        saved=output/'sources'/path.relative_to(project)
+        saved.parent.mkdir(parents=True,exist_ok=True)
+        saved.write_bytes(data)
+    (output/'kernel.bin').write_bytes(kernel)
+    (output/'kernel.elf').write_bytes(elf(kernel,0x100000,symbols))
+    (output/'boot.elf').write_bytes(elf(boot,0x7c00,bootsymbols))
+    image=boot+kernel+bytes((-len(kernel))%512)
+    (output/'oslab.img').write_bytes(image)
+    report={'route':'hand-placed hexadecimal bytes; no compiler/assembler/linker', 'kernel_bytes':len(kernel),'image_bytes':len(image),'padding_bytes':len(kernel)-len(cells), 'image_sha256':hashlib.sha256(image).hexdigest(),'sources':{str(p.relative_to(project)):hashlib.sha256(sourcebytes[p]).hexdigest() for p in paths},'symbols':{n:a for n,(a,s) in symbols.items()},'boot_symbols':{n:a for n,(a,s) in bootsymbols.items()},'bss':ranges,'cpu_modes':{'boot16':[0x7c00,bootsymbols['boot_protected'][0]],'boot32':[bootsymbols['boot_protected'][0],0x7e00],'kernel32':[0x100000,symbols['raw_entry'][0]],'kernel64':[symbols['raw_entry'][0],max(cells)+1]},'writer_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'python_version':sys.version}
+    (output/'manifest.json').write_text(json.dumps(report,indent=2)+'\n')
+    return report
+
+
+if __name__ == '__main__':
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--project',required=True)
+    parser.add_argument('--output',required=True)
+    args=parser.parse_args()
+    print(json.dumps(build(args.project,args.output),indent=2))

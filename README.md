@@ -216,3 +216,15 @@ restoration, including control/client costs, rather than cold boot.
 adapter and verifies halt addresses, memory boundaries and actual copies.
 Packet service intervals report capture request-to-response time separately from
 full client latency. None establishes physical cycles or homelab completion.
+
+
+`raw-build --project ../oslab --output build/raw` places the OS repository's
+literal hex bytes and fixed-width address fields without invoking a guest
+compiler, assembler or linker. It snapshots inputs, verifies ranges/overlaps,
+records padding and hashes, and writes real disk bytes plus ELF symbol containers.
+`raw-test --build build/raw --output local/raw-checks` exercises that actual image:
+corrupt/truncated boot, absent NIC, CPU fault/hang recovery, guarded primitive
+execution, real DMA/IRQ behavior, malformed protocol boundaries and both NIC wire
+paths. The fixture gate remains separate. Optional individual `osenv.raw_*_test`
+modules retain failures and isolated deliberate mutations. Raw guest service
+limits are described in the OS checkout; host inspection invents no guest services.

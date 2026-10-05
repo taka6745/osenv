@@ -48,6 +48,12 @@ def parser():
     item.add_argument('--os-only', action='store_true')
     item = sub.add_parser('build')
     item.add_argument('--fixture-mode', choices=['real16', 'protected32', 'long64'], default='real16')
+    item = sub.add_parser('raw-build')
+    item.add_argument('--project',required=True)
+    item.add_argument('--output',required=True)
+    item = sub.add_parser('raw-test')
+    item.add_argument('--build',required=True)
+    item.add_argument('--output',required=True)
     item = sub.add_parser('project-build')
     item.add_argument('--project', required=True)
     item.add_argument('--machine-code', action='store_true')
@@ -77,6 +83,7 @@ def parser():
     item.add_argument('--nic-model', choices=['e1000', 'e1000e'], default='e1000')
     item.add_argument('--minimal-devices', action='store_true')
     item.add_argument('--boot-kernel', help='Optional authored PVH ELF32 plus matching provenance')
+    item.add_argument('--timing', choices=['realtime', 'virtual'], default='realtime', help='Peer socket waits use wall time; virtual mode is for explicit clock-mismatch experiments')
     run = sub.add_parser('run')
     run.add_argument('--scenario', choices=SCENARIOS, default='pass')
     run.add_argument('--timeout', type=float, default=8)
@@ -181,6 +188,12 @@ def dispatch(a):
         return audit(a.repo, a.os_only)
     if operation == 'doctor':
         return doctor()
+    if operation == 'raw-build':
+        from .raw_build import build as raw_build
+        return {'ok':True,**raw_build(a.project,a.output)}
+    if operation == 'raw-test':
+        from .raw_test import test as raw_test
+        return raw_test(a.build,a.output)
     if operation in ['project-build', 'project-test', 'project-deploy']:
         from .project import project_build, project_test, project_deploy
         if operation == 'project-build':
@@ -193,7 +206,7 @@ def dispatch(a):
         return pi4_test(a.project)
     if operation == 'web-test':
         from .web_test import web_test
-        return web_test(a.image, a.symbols, production=a.production, nic_model=a.nic_model, minimal_devices=a.minimal_devices, boot_kernel=a.boot_kernel)
+        return web_test(a.image, a.symbols, production=a.production, nic_model=a.nic_model, minimal_devices=a.minimal_devices, boot_kernel=a.boot_kernel, timing=a.timing)
     if operation == 'build':
         return build(a.fixture_mode)
     if operation == 'run':

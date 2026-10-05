@@ -1,4 +1,9 @@
-"""Authored external peer acceptance for the actual OS web image, never a guest fixture."""
+"""Authored external peer acceptance for the actual OS web image, never a guest fixture.
+
+The peer uses wall-time socket waits. Default to a realtime guest clock so a
+short closed-window observation cannot consume the whole guest TCP deadline
+under virtual icount sleep=off. CPU-only deterministic tests stay separate.
+"""
 
 import socket, struct, time, json, traceback
 from pathlib import Path
@@ -14,6 +19,7 @@ def web_test(
     nic_model="e1000",
     minimal_devices=False,
     boot_kernel=None,
+    timing="realtime",
 ):
     if not __debug__:
         raise RuntimeError("Acceptance checks require Python assertions enabled")
@@ -26,6 +32,7 @@ def web_test(
         mode="long64",
         memory=64,
         network="peer",
+        timing=timing,
         nic_model=nic_model,
         minimal_devices=minimal_devices,
         boot_kernel=boot_kernel,
@@ -41,6 +48,7 @@ def web_test(
             "run_id": rid,
             "verdict": "web-peer-rejected",
             "error": str(error) or type(error).__name__,
+            "timing": timing,
         }
         try:
             failure["capture"] = call(rid, {"operation": "capture", "mode": "long64"})
@@ -87,6 +95,8 @@ def _exercise_peer(rid, production):
                 "drop_first_ack": True,
                 "zero_window": True,
                 "out_of_order_prefix": 8,
+                "timing": json.loads((run / "manifest.json").read_text())["input"]["timing"],
+                "clock_scope": "The socket peer schedules loss/window probes with wall time; realtime keeps those probes inside actual guest deadlines. Virtual CPU-only tests remain separate.",
             },
             indent=2,
         )
@@ -452,6 +462,7 @@ def _exercise_peer(rid, production):
         for line in (run / "events.jsonl").read_text().splitlines()
     )
     verdict["production"] = production
+    verdict["timing"] = json.loads((run / "manifest.json").read_text())["input"]["timing"]
     verdict["boot_route"] = json.loads((run / "manifest.json").read_text())["machine"][
         "boot_route"
     ]

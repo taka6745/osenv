@@ -56,7 +56,7 @@ def audit(root, os_only=False):
             errors.append('vendored Git submodule is forbidden')
         elif path.name in {'pyproject.toml', 'requirements.txt', 'requirements-dev.txt', 'package.json', 'Cargo.toml', 'Pipfile', 'poetry.lock', 'uv.lock'} or path.suffix in {'.so', '.dylib', '.a', '.dll', '.o', '.img', '.qcow2', '.dump', '.core'}:
             errors.append('dependency/package manifest or generated binary is forbidden')
-        elif path.suffix in {'.py', '.c', '.h', '.asm', '.S', '.s'}:
+        elif path.suffix in {'.py', '.c', '.h', '.asm', '.inc', '.S', '.s'}:
             checked += 1
             try:
                 errors.extend(inspect_source(path, modules))
