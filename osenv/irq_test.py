@@ -9,7 +9,7 @@ from .core import get_run
 from .__main__ import call
 
 
-def test(image, symbols):
+def test(image, symbols, nic_model="e1000"):
     if not __debug__:
         raise RuntimeError("Acceptance requires Python assertions enabled")
     rid = start(
@@ -20,6 +20,7 @@ def test(image, symbols):
         mode="long64",
         memory=64,
         network="isolated",
+        nic_model=nic_model,
     )["run_id"]
     run = get_run(rid)
     result = {"ok": False, "run_id": rid}
@@ -83,6 +84,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", required=True)
     parser.add_argument("--symbols", required=True)
+    parser.add_argument("--nic-model", choices=["e1000", "e1000e"], default="e1000")
     args = parser.parse_args()
     result = test(**vars(args))
     print(json.dumps(result, indent=2))

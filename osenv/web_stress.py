@@ -76,6 +76,7 @@ def stress(
     timing="realtime",
     production=False,
     nic_rom=True,
+    nic_model="e1000",
 ):
     if production and profile:
         raise ValueError("Production must not expose profiling")
@@ -93,6 +94,7 @@ def stress(
         network="isolated",
         timing=timing,
         nic_rom=nic_rom,
+        nic_model=nic_model,
     )["run_id"]
     run = get_run(rid)
     inputs = {
@@ -102,6 +104,7 @@ def stress(
         "production": production,
         "timing": timing,
         "nic_rom": nic_rom,
+        "nic_model": nic_model,
         "scope": "single CPU QEMU TCG, isolated NAT; no physical cycle claim",
     }
     (run / "stress-inputs.json").write_text(json.dumps(inputs, indent=2))
@@ -354,6 +357,7 @@ if __name__ == "__main__":
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--production", action="store_true")
     parser.add_argument("--no-nic-rom", dest="nic_rom", action="store_false")
+    parser.add_argument("--nic-model", choices=["e1000", "e1000e"], default="e1000")
     parser.add_argument("--timing", choices=("virtual", "realtime"), default="realtime")
     args = parser.parse_args()
     if not 1 <= args.requests <= 100000:

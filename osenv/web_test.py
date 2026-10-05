@@ -7,7 +7,7 @@ from osenv.core import get_run
 from osenv.__main__ import call
 
 
-def web_test(image, symbols, production=False):
+def web_test(image, symbols, production=False, nic_model="e1000"):
     if not __debug__:
         raise RuntimeError("Acceptance checks require Python assertions enabled")
     r = start(
@@ -18,6 +18,7 @@ def web_test(image, symbols, production=False):
         mode="long64",
         memory=64,
         network="peer",
+        nic_model=nic_model,
     )
     rid = r["run_id"]
     try:
@@ -351,6 +352,26 @@ def _exercise_peer(rid, production):
     client_seq += 1
     while recv()[0][1] != client_seq:
         pass
+    # Five-segment TCP exchange: client ACK+GET+FIN, server data+ACK+FIN.
+    client_seq = 0x23456789
+    tcp_send(client_seq, 0, 2, window=4096, options=b"\x02\x04\x05\xb4")
+    (seq, ack), flags, data = recv()
+    assert flags & 0x12 == 0x12 and not data and ack == client_seq + 1
+    client_seq += 1
+    server_seq = seq + 1
+    tcp_send(client_seq, server_seq, 0x19, request, window=4096)
+    client_seq += len(request) + 1
+    (seq, ack), flags, data = recv()
+    assert data == body and flags & 0x19 == 0x19
+    assert seq == server_seq and ack == client_seq
+    tcp_send(client_seq, server_seq + len(body) + 1, 0x10, window=4096)
+    peer.settimeout(0.1)
+    try:
+        recv()
+        raise AssertionError("Unexpected sixth segment after five-segment close")
+    except TimeoutError:
+        pass
+    peer.settimeout(5)
     verdict = {
         "ok": True,
         "run_id": rid,
@@ -360,6 +381,7 @@ def _exercise_peer(rid, production):
         "zero_window_reopen": True,
         "fin_ack_loss_retransmission": bool(fin_retransmits),
         "fin_waits_for_window": True,
+        "five_segment_request_half_close": True,
         "out_of_order_request": True,
         "client_sequence_wrap": True,
         "corrupt_tcp_rejected": True,
@@ -406,5 +428,15 @@ def _exercise_peer(rid, production):
         "image_sha256"
     ]
     verdict["exit_code"] = status["exit_code"]
+    from .boot_wire import analyze
+
+    flow = [
+        f
+        for f in analyze(run / "network.pcap")["tcp_connections"]
+        if f["client_isn"] == 0x23456789
+    ]
+    assert len(flow) == 1 and len(flow[0]["frames"]) == 5
+    assert [f["flags"] for f in flow[0]["frames"]] == [2, 18, 25, 25, 16]
+    verdict["five_segment_captured_frames"] = 5
     (run / "web-wire-verdict.json").write_text(json.dumps(verdict, indent=2))
     return verdict

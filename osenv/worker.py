@@ -30,7 +30,9 @@ class EventLog(list):
 
 
 def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=None,
-          manual=False, symbols=None, mode='real16', memory=32, network='none', disk_interface=None, timing='virtual', nic_rom=True):
+          manual=False, symbols=None, mode='real16', memory=32, network='none', disk_interface=None, timing='virtual', nic_rom=True, nic_model='e1000'):
+    if nic_model not in ['e1000', 'e1000e']:
+        raise ValueError('Unsupported NIC model')
     if scenario not in SCENARIOS or not 0.2 <= timeout <= 600:
         raise ValueError('Invalid scenario or timeout (0.2..600 seconds)')
     if timing not in ['virtual', 'realtime']:
@@ -70,7 +72,7 @@ def start(scenario='pass', timeout=8, paused=False, image=None, existing_build=N
          'input': {'scenario': scenario, 'command': '1' + SCENARIOS[scenario] + '\n',
                    'seed': 7, 'expected_value': 42, 'timeout': timeout, 'paused': paused,
                    'manual': manual, 'mode': mode, 'memory_mib': memory, 'network': network,
-                   'disk_interface': disk_interface, 'timing': timing, 'nic_rom': nic_rom},
+                   'disk_interface': disk_interface, 'timing': timing, 'nic_rom': nic_rom, 'nic_model': nic_model},
          'socket_directory': str(sockets), 'source_hashes':
          {'osenv/' + p.name: digest(p) for p in sorted(Path(__file__).parent.glob('*.py'))}})
     for name in ['serial.log', 'early.log', 'qemu.log', 'trace.log', 'events.jsonl', 'annotations.jsonl', 'actions.jsonl']:
@@ -356,7 +358,7 @@ class Owner:
                   '-serial', 'chardev:serial', '-debugcon', f'file:{self.run / "early.log"}',
                   '-qmp', f'unix:{self.sockets / "qmp"},server=on,wait=off',
                   '-gdb', f'unix:{self.sockets / "gdb"},server=on,wait=off']
-        nic_device = 'e1000,id=nic0,netdev=net0'
+        nic_device = self.manifest['input'].get('nic_model', 'e1000') + ',id=nic0,netdev=net0'
         if not self.manifest['input'].get('nic_rom', True):
             nic_device += ',romfile='
         if self.manifest['input']['network'] in ['isolated', 'internet']:

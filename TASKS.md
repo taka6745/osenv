@@ -33,3 +33,22 @@ Provenance: controller changes authored here; guest code maintained in oslab;
 no external library or implementation source imported. Result: OS and harness
 checks locally pass; diagnostic image also homelab verified. Final commit
 verification is reported by CI status, separate from release acceptance.
+
+
+T016 — Goal: lower boot latency and verify minimum TCP exchange cost.
+Interface: external packet counts and staged real-image timing. Prerequisites:
+T015 release, full disk boot, independent packet peer. Acceptance: graceful
+five-segment exchange, unchanged normal-client behavior, repeated boot evidence.
+Provenance: RFC 9293 and emulator/firmware documentation; no code imported.
+Result: production/debug peers passed; independent pcap confirms five frames
+with ACK+GET+FIN and data+ACK+FIN. Ordinary socket/NAT clients still use eight.
+Added strict boot/DHCP/TCP capture analyzer; 15 unit tests and harness gate passed.
+Three actual BIOS-to-first-DHCP-send breakpoints measured 68.61, 68.63 and
+69.59 ms, excluding host preparation/DHCP/debugger setup. Full service readiness
+remains about 1.5 s: the emulator blocks RX for one second after RCTL writes.
+No emulator timer bypass or acknowledgement removal. Our shared guest driver
+now supports 82574 legacy DMA/PIC. Four matched final-image runs: e1000
+1527/1523 ms and 1210/1192 req/s; e1000e 520/530 ms and 914/900 req/s. Keep
+e1000 default for throughput; e1000e is optional. Both production/debug wire
+peers and actual 82574 IRQ rearming passed, along with exact-image codec and
+integrated OS gates. Reproduced actual VM preserved image/NIC/clock settings.

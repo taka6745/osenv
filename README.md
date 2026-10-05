@@ -142,3 +142,12 @@ truncation of that actual response raises IncompleteRead.
 `python3 -m osenv.irq_test --image PATH --symbols PATH` requires a full debug
 image and checks two real NIC interrupt deliveries, cause clearing and EOI
 through GDB. Both retain run evidence and full failure captures.
+
+`python3 -m osenv.boot_wire PCAP` reports captured DHCP timing and actual TCP
+frames per connection; rejects truncated captures. Web peer acceptance now
+independently verifies a five-frame graceful exchange when the client combines
+handshake ACK, request and FIN. Normal socket clients may send additional frames.
+
+`--nic-model e1000e` selects the guest's authored 82574 legacy interface in
+`run`, `web-test`, `osenv.web_stress` and `osenv.irq_test`. Default remains e1000.
+Saved reproduction/recovery preserves model, timing and ROM configuration.
