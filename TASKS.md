@@ -125,3 +125,14 @@ Exact default 16 KiB production image separately passed 30,000 verified response
 and returned actual HTTP.
 HPET-absent production wire gate passed with retained experimental wrapper/actual
 QEMU argv; fallback retains PIT missed-tick limitations.
+
+Homelab follow-up: authenticated SSH recovered. Exact 16 KiB default production
+image passed the peer wire gate and 1,000 response/boundary/timeout stress gate
+in dedicated homelab QEMU. Exact PVH image passed the peer gate with the recorded
+local qboot firmware in a project-owned remote runtime; no global host installation.
+The first remote peer failure was queued identical retransmissions, all captured
+before the zero-window ACK. Peer handling now verifies known duplicate bytes and
+rejects new sequence space/FIN while closed; a GDB RAM window-overwrite defect
+was rejected with full capture. Full 18-check controller gate/30 tests passed
+again. Raw failures, mutation actions, firmware/tool hashes and remote evidence
+remain in local/t019; these are QEMU acceptance, not physical performance.

@@ -7,7 +7,14 @@ from osenv.core import get_run
 from osenv.__main__ import call
 
 
-def web_test(image, symbols, production=False, nic_model="e1000", minimal_devices=False, boot_kernel=None):
+def web_test(
+    image,
+    symbols,
+    production=False,
+    nic_model="e1000",
+    minimal_devices=False,
+    boot_kernel=None,
+):
     if not __debug__:
         raise RuntimeError("Acceptance checks require Python assertions enabled")
     r = start(
@@ -269,6 +276,7 @@ def _exercise_peer(rid, production):
     tcp_send(client_seq, server_seq, 0x18, request[8:])
     client_seq += len(request) - 8
     body = b""
+    received_segments = {}
     dropped = False
     zero_test = False
     retransmits = 0
@@ -285,19 +293,34 @@ def _exercise_peer(rid, production):
             if not body:
                 assert (seq, data) == first
                 retransmits += 1
+            if withheld_fin is None and body and seq != (server_seq & 0xFFFFFFFF):
+                assert received_segments.get(seq) == data, "unknown retransmitted data"
+                tcp_send(client_seq, server_seq, 0x10)
+                continue
             if withheld_fin is not None:
                 assert (seq, data) == withheld_fin and flags & 1
                 fin_retransmits += 1
             else:
                 assert seq == (server_seq & 0xFFFFFFFF)
+                received_segments[seq] = data
                 body += data
                 server_seq += len(data)
             if not zero_test:
                 tcp_send(client_seq, server_seq, 0x10, window=0)
                 peer.settimeout(0.1)
+                # Previously transmitted duplicates can already be in the peer
+                # queue. They consume no new sequence space in a closed window.
+                quiet_until = time.monotonic() + 0.1
                 try:
-                    _, _, extra = recv()
-                    assert not extra, "data sent into zero receive window"
+                    while time.monotonic() < quiet_until:
+                        peer.settimeout(max(0.001, quiet_until - time.monotonic()))
+                        (extra_seq, _), extra_flags, extra = recv()
+                        assert not (
+                            extra_flags & 1
+                        ), "FIN sent into zero receive window"
+                        assert (
+                            not extra or received_segments.get(extra_seq) == extra
+                        ), "new data sent into zero receive window"
                 except TimeoutError:
                     pass
                 peer.settimeout(5)
@@ -429,7 +452,9 @@ def _exercise_peer(rid, production):
         for line in (run / "events.jsonl").read_text().splitlines()
     )
     verdict["production"] = production
-    verdict["boot_route"] = json.loads((run / "manifest.json").read_text())["machine"]["boot_route"]
+    verdict["boot_route"] = json.loads((run / "manifest.json").read_text())["machine"][
+        "boot_route"
+    ]
     verdict["termination"] = "external-stop" if production else "guest-debug-exit"
     verdict["image_sha256"] = json.loads((run / "manifest.json").read_text())[
         "image_sha256"
