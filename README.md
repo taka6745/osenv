@@ -98,7 +98,10 @@ checks live in `tools/check_toolchain.py`; they are host probes, not OS code.
 `project-build --project ../oslab` builds the actual guest Makefile into immutable
 external build directories, saves source/tool/image/symbol hashes and runs host
 sanitizers plus a deliberately disabled checksum-validation mutant. No harness
-fixture is substituted. `project-test --project ../oslab` verifies full BIOS disk
+fixture is substituted. Optional `--machine-code --machine-http` selects oslab’s
+separate authored opcode implementations and their protected-page/oracle tests.
+Build configuration participates in the immutable build identity; readable and
+raw-byte debug images cannot reuse each other’s manifest. `project-test --project ../oslab` verifies full BIOS disk
 boot, real memory exhaustion, #UD/#PF and hang captures/recovery, corrupt/truncated
 boot images, isolated DHCP, link down, absent DNS and GDB-injected RX errors.
 

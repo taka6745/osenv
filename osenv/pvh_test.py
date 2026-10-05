@@ -18,7 +18,8 @@ def test(image, symbols, boot_kernel, report, cases=None):
     entry = struct.unpack_from('<I', boot_kernel.read_bytes(), 24)[0]
     assert entry == addresses['pvh_entry']
     selected = cases or ['magic', 'version', 'count-zero', 'count-overflow', 'pointer-overflow',
-                         'map-wrap', 'destination-overlap', 'kernel-corrupt', 'stack-overlap']
+                         'map-wrap', 'destination-overlap', 'kernel-corrupt', 'stack-overlap',
+                         'stack-overlap-before', 'stack-overlap-inside']
     checks = []
     report = Path(report)
     report.parent.mkdir(parents=True, exist_ok=True)
@@ -78,17 +79,19 @@ def test(image, symbols, boot_kernel, report, cases=None):
                 address = 0x100000 if provenance.get('preload') else addresses['kernel_payload']
                 byte = memory(address, 1)
                 write(address, bytes([byte[0] ^ 1]))
-            elif label == 'stack-overlap':
-                write(0x7bfc, records)
-                write(info + 40, struct.pack('<Q', 0x7bfc))
+            elif label.startswith('stack-overlap'):
+                source = {'stack-overlap': 0x7bfc, 'stack-overlap-before': 0x7bd4,
+                          'stack-overlap-inside': 0x7bf0}[label]
+                write(source, records)
+                write(info + 40, struct.pack('<Q', source))
             else:
                 raise ValueError(label)
-            target = 0x100000 if label == 'stack-overlap' else addresses['pvh_failed']
+            target = 0x100000 if label.startswith('stack-overlap') else addresses['pvh_failed']
             execute(['-break-delete', f'-break-insert -h *{target:#x}', '-exec-continue'])
             pc = number('$pc')
             check['expected_pc'], check['actual_pc'] = target, pc
             assert pc == target, check
-            if label == 'stack-overlap':
+            if label.startswith('stack-overlap'):
                 expected_map = b''.join(records[i:i + 20] + struct.pack('<I', 1)
                                         for i in range(0, len(records), 24))
                 assert memory(0x5010, len(records)) == expected_map

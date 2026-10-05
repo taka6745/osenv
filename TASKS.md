@@ -136,3 +136,19 @@ rejects new sequence space/FIN while closed; a GDB RAM window-overwrite defect
 was rejected with full capture. Full 18-check controller gate/30 tests passed
 again. Raw failures, mutation actions, firmware/tool hashes and remote evidence
 remain in local/t019; these are QEMU acceptance, not physical performance.
+
+T020 — Goal: externally verify and compare readable and hand-encoded OS variants.
+Interface: existing real-image gates/perf_bench, raw opcode/relocation inspection
+and retained host protected-page/oracle/mutation evidence.
+Prerequisites: matching authored sources, symbols, build/image hashes and machine.
+Acceptance: actual boot/HTTP/fault/IRQ/loader bounds and deliberate opcode defects;
+paired repeated service/reset timing, size accounting and homelab exact-image gate.
+Provenance: no guest or external source imported; all artifacts stay here ignored.
+Results: both real OS 16-case gates and the 18-check/30-host-test harness gate
+passed. Exact production BIOS and corrected PVH homelab wire/1,000-request
+checks passed; source/hash/tool/firmware evidence retained outside Git. Caught
+raw +142 short-branch and source/stack-copy defects; compile-time signed checks
+and three real overlap regressions now reject them. Build flags participate in
+identity and explicitly select raw headers. Production TCG throughput remains
+comparable; 45.1% fewer debug/no-LTO dispatches are not physical cycles/cache.
+Reports/graphs/rejected attempts remain in local/t020 and sibling evidence dirs.

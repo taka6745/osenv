@@ -15,7 +15,9 @@ from .integrity import audit
 from .worker import start
 
 
-def project_build(project):
+def project_build(project, machine_code=False, machine_http=False):
+    if type(machine_code) is not bool or type(machine_http) is not bool:
+        raise ValueError('Machine-code build options must be booleans')
     project = Path(project).resolve()
     if re.search(r'[^A-Za-z0-9_./-]', str(project)):
         raise ValueError('Project Makefile currently requires a path without whitespace or shell metacharacters')
@@ -27,13 +29,18 @@ def project_build(project):
                if p.is_file() and '.git' not in p.parts and (p.suffix in ['.c', '.h', '.asm', '.inc', '.ld', '.S', '.s'] or p.name == 'Makefile')}
     if not sources or 'Makefile' not in sources:
         raise ValueError('No project build definitions')
-    inputs = {'schema': 1, 'fixture': False, 'source_hashes': sources, 'tools': versions}
+    configuration = {'debug': True, 'machine_code': machine_code, 'machine_http': machine_http}
+    inputs = {'schema': 1, 'fixture': False, 'source_hashes': sources, 'tools': versions,
+              'configuration': configuration}
     identity = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()[:16]
     output = ROOT / 'build' / ('os-' + identity)
     output.mkdir(parents=True, exist_ok=True)
     args = ['make', '-C', project, f'OUT={output}', 'DEBUG=1', f'CC={tool("clang")}', f'LD={tool("ld.lld")}',
-            f'OBJCOPY={tool("llvm-objcopy")}', f'NASM={tool("nasm")}', f'PYTHON={os.sys.executable}']
-    built = subprocess.run([str(x) for x in args+['all', 'host-test']], capture_output=True, text=True, timeout=120)
+            f'OBJCOPY={tool("llvm-objcopy")}', f'NASM={tool("nasm")}', f'PYTHON={os.sys.executable}',
+            f'MACHINE={int(machine_code)}', f'MACHINE_HTTP={int(machine_http)}',
+            f'MACHINE_HEADERS={int(machine_http)}']
+    targets = ['all', 'host-test'] + (['machine-host-test'] if machine_code or machine_http else [])
+    built = subprocess.run([str(x) for x in args+targets], capture_output=True, text=True, timeout=120)
     (output/'build.log').write_text(built.stdout+'\n'+built.stderr)
     if built.returncode:
         raise RuntimeError(f'OS build or host tests failed; see {output}/build.log')
@@ -58,7 +65,7 @@ def project_build(project):
                 'symbols': {'kernel': {'file': 'kernel.elf', 'address': 0x100000, 'mode': 'long64'},
                             'stage1': {'file': 'stage1.elf', 'address': 0x7c00, 'mode': 'real16'},
                             'stage2': {'file': 'stage2.elf', 'address': 0x8000, 'mode': 'real16'}},
-                'configuration': {'debug': True},
+                'configuration': configuration,
                 'disk': {'interface': 'ide', 'stage2_lba': 1, 'kernel_lba': 1+(output/'stage2.bin').stat().st_size//512}}
     save(output/'manifest.json', manifest)
     return {'ok': True, 'build_id': identity, 'directory': str(output), **manifest}
@@ -268,16 +275,16 @@ def wire_evidence(path):
             'responses':responses,'pcap_sha256':digest(path)}
 
 
-def project_test(project, internet_host=None):
-    built = project_build(project)
+def project_test(project, internet_host=None, machine_code=False, machine_http=False):
+    built = project_build(project, machine_code, machine_http)
     result = image_gate(built['directory'], internet_host)
     ROOT.joinpath('artifacts').mkdir(exist_ok=True)
     save(ROOT/'artifacts/os-latest-test.json',result)
     return result
 
 
-def project_deploy(project, config_path, internet_host=None):
-    built=project_build(project)
+def project_deploy(project, config_path, internet_host=None, machine_code=False, machine_http=False):
+    built=project_build(project, machine_code, machine_http)
     config=load(config_path)
     host=config['ssh_host']
     if not re.fullmatch(r'[A-Za-z0-9_.@-]+',host) or host.startswith('-'):

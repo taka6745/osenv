@@ -50,11 +50,17 @@ def parser():
     item.add_argument('--fixture-mode', choices=['real16', 'protected32', 'long64'], default='real16')
     item = sub.add_parser('project-build')
     item.add_argument('--project', required=True)
+    item.add_argument('--machine-code', action='store_true')
+    item.add_argument('--machine-http', action='store_true')
     item = sub.add_parser('project-test')
     item.add_argument('--project', required=True)
+    item.add_argument('--machine-code', action='store_true')
+    item.add_argument('--machine-http', action='store_true')
     item.add_argument('--internet-host', help='Opt-in live HTTP/DNS acceptance host')
     item = sub.add_parser('project-deploy')
     item.add_argument('--project', required=True)
+    item.add_argument('--machine-code', action='store_true')
+    item.add_argument('--machine-http', action='store_true')
     item.add_argument('--config', required=True)
     item.add_argument('--internet-host')
     item = sub.add_parser('test')
@@ -178,10 +184,10 @@ def dispatch(a):
     if operation in ['project-build', 'project-test', 'project-deploy']:
         from .project import project_build, project_test, project_deploy
         if operation == 'project-build':
-            return project_build(a.project)
+            return project_build(a.project, a.machine_code, a.machine_http)
         if operation == 'project-test':
-            return project_test(a.project, a.internet_host)
-        return project_deploy(a.project, a.config, a.internet_host)
+            return project_test(a.project, a.internet_host, a.machine_code, a.machine_http)
+        return project_deploy(a.project, a.config, a.internet_host, a.machine_code, a.machine_http)
     if operation == 'pi4-test':
         from .pi4_test import pi4_test
         return pi4_test(a.project)

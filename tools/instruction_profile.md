@@ -36,3 +36,10 @@ implemented here without imported source.
 T017 validation: real compact debug boot, 2,000 externally verified responses,
 idle/load checkpoints and exact inline/callback agreement in all five phases.
 Raw reports and graphs are local external artifacts, not tracked guest output.
+
+T020: build with `make web-debug WEB_LTO=0 PROFILE=1` for callable serial
+reset checkpoints; same-file compiler inlining may still remove arch_init
+checkpoints. Observe actual entries instead of assuming phase numbers. NASM
+raw labels can have misleading ELF size 1; retained attribution must use verified
+nonoverlapping text partitions and deduplicate aliases. Complete dispatch
+counts still require exact independent/inline agreement in every phase.
