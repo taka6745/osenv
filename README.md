@@ -229,6 +229,32 @@ paths. The fixture gate remains separate. Optional individual `osenv.raw_*_test`
 modules retain failures and isolated deliberate mutations. Raw guest service
 limits are described in the OS checkout; host inspection invents no guest services.
 
+Literal images exposing `nic_tx_buffer` also run the actual DMA ownership,
+in-place padding/guard/wrap and packet-content oracle during `raw-test`.
+`python3 -m osenv.raw_tx_test --build BUILD --output NEW.json` runs it separately;
+add `--checksum-cache` for the implemented static-response cache interface, or
+`--ownership-mutant` to prove a RAM-only missing ownership check is rejected.
+Missing guest interfaces fail explicitly. Mutants are restored and never shipped.
+`raw_queue_test --build BUILD --output NEW.json` checks the actual deferred-SYN
+interface, malformed inputs, old connection preservation and full response;
+`--queue-mutant` proves publication failure is detected. `raw_offload_test` checks
+actual context/data ownership, seeds, padding fallback and descriptor bounds;
+`--mutant` tests missing TXSM. Final wire insertion remains a separate NIC gate.
+
+`python3 -m osenv.peer_bench --image IMAGE --symbols ELF --output NEW_DIR`
+measures fresh, complete five-frame guest TCP exchanges through an owned packet
+stream. Optional `--compare-image`/`--compare-symbols` alternate matched variants;
+both routes may specify their PVH loaders. Every response and captured checksum,
+sequence and FIN acknowledgement is checked. Construction/oracle costs are saved.
+This separate cooperative-client backend must not be compared directly with NAT
+benchmarks or physical line rates.
+`--native-checksum` builds the authored host-only C helper, verifies20,000 seeded
+vectors and records compiler/source/binary provenance. Select an installed host
+compiler with `--checksum-compiler /usr/bin/cc`; otherwise configured Clang is used.
+`--defer-http-oracle` checks a fully parsed warmup response byte-for-byte inline
+and parses every captured response after load. Independent Python capture checks
+remain mandatory before success. Both variants use the same options and helper.
+
 
 Add `--packed` to `raw-build` for the authored bounded decoder and optimal
 literal/back-reference stream. `raw-size --build BUILD --output NEW_DIR`
@@ -291,3 +317,18 @@ zero blocks are stored as sparse holes. Every rewrite verifies bytes before atom
 replacement; failure leaves the original dump and marks capture incomplete.
 `memory-storage.json` records logical and allocated sizes. This reduces capture
 storage, never guest memory or image size, and does not remove evidence.
+
+Linux host profiling attaches only to a verified live owned QEMU process:
+`python3 -m osenv.host_perf --run-id RUN --seconds 3 --output NEW_DIRECTORY`.
+Default hardware events use `:H` to exclude KVM guest execution; software events
+count host process scheduling. `--counter-scope guest` uses `:G`, requires actual
+KVM and positive observed cycles/instructions, and retains the software events'
+host scope. These filtered samples are not physical-board cycle measurements.
+Existing QEMU task identities must remain stable throughout the sample.
+`--kvm-exits` additionally requires an already readable `kvm:kvm_exit` tracepoint;
+missing tracefs, events, permissions or PMU support fail explicitly. No mounts,
+sysctl changes or installations occur. `--perf-executable /absolute/path/perf`
+selects an installed/extracted tool; command/version/binary provenance, raw output
+and counter running percentages are retained. Run profiling separately from
+timing acceptance. Guest build provenance and harness source hashes have distinct
+scopes; packet comparisons retain verified raw source snapshots before launch.

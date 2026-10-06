@@ -45,7 +45,7 @@ def test(build, output):
     expected=json.loads((build/'manifest.json').read_text())['image_sha256']
     assert hashlib.sha256((build/'oslab.img').read_bytes()).hexdigest()==expected
     results={}
-    for name, function in (
+    jobs=[
         ('boot',lambda:boot(build,output/'boot')),
         ('clock-primitives',lambda:clock(build,output/'clock-primitives')),
         ('driver',lambda:driver(build,output/'driver')),
@@ -53,7 +53,19 @@ def test(build, output):
         ('irq',lambda:irq(build)),
         ('wire-e1000e',lambda:web_test(str(build/'oslab.img'),str(build/'kernel.elf'),production=True,nic_model='e1000e',minimal_devices=True)),
         ('wire-e1000',lambda:web_test(str(build/'oslab.img'),str(build/'kernel.elf'),production=True,nic_model='e1000',minimal_devices=True)),
-    ):
+    ]
+    symbols=json.loads((build/'manifest.json').read_text())['symbols']
+    if 'nic_tx_buffer' in symbols:
+        from .raw_tx_test import test as tx
+        jobs.insert(3,('tx-extended',lambda:tx(build,output/'tx-extended.json',
+                                             checksum_cache='net_tcp_checksum_cached' in symbols)))
+    if 'net_tcp_queue_syn' in symbols:
+        from .raw_queue_test import test as queue
+        jobs.insert(4,('queued-handshake',lambda:queue(build,output/'queued-handshake.json')))
+    if 'nic_send_static' in symbols:
+        from .raw_sg_test import test as sg
+        jobs.insert(4,('static-scatter-gather',lambda:sg(build,output/'static-scatter-gather.json')))
+    for name, function in jobs:
         try:
             result=function()
         except Exception as error:

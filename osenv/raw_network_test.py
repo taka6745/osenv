@@ -16,7 +16,7 @@ from .core import get_run
 from .__main__ import call
 from .raw_primitives_test import ActualGuest, elf_symbols, checksum, PRESERVED
 
-def test(build, output, seed=17113126):
+def test(build, output, seed=17113126, extra=None):
     if not __debug__:
         raise RuntimeError('Network acceptance requires Python assertions enabled')
     output = Path(output).resolve()
@@ -287,6 +287,8 @@ def test(build, output, seed=17113126):
         vm.write(1646592, b'\xcc' * 1024)
         st = invoke('net_frame', ackframe(payload=b'A' * 769), setup=established)
         record('actual-request-overflow-reset-before-copy', st[64] == 0 and vm.read(1646592, 1024) == b'\xcc' * 1024)
+        if extra:
+            extra(vm, s, saved, sent, record, ack, mac, out, run)
         result = {'ok': True, 'run_id': rid, 'actual_guest_image': str(out / 'oslab.img'), 'checks': checks, 'seed': seed, 'image_sha256': hashlib.sha256((out / 'oslab.img').read_bytes()).hexdigest(), 'build_manifest': json.loads((out / 'manifest.json').read_text()), 'harness_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
         (run / 'raw-network-boundaries.json').write_text(json.dumps(result, indent=2))
         (run / 'raw-network-boundaries.mi').write_bytes(vm.debugger.transcript)

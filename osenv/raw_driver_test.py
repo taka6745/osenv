@@ -16,7 +16,7 @@ from .__main__ import call
 from .raw_primitives_test import ActualGuest, PRESERVED
 
 
-def test(build, output, mutant=False):
+def test(build, output, mutant=False, extra=None):
     if not __debug__:
         raise RuntimeError('Assertions required')
     output=Path(output).resolve()
@@ -44,11 +44,11 @@ def test(build, output, mutant=False):
         guest.command(f'-break-insert -h *{symbols["raw_fault"]:#x}')
         mmio=int.from_bytes(guest.read(0x180108,8),'little')
         assert mmio >= 0xc0000000
-        for offset in (0x100,0x400,0x2818,0x3818):
+        for offset in (0x100,0x400,0x2818,0x3818,0x3810):
             controls[offset]=guest.read(mmio+offset,4)
         for offset in (0x100,0x400):
             guest.write(mmio+offset,(int.from_bytes(controls[offset],'little')&~2).to_bytes(4,'little'))
-        for address,size in ((0x180000,0xb000),(0x1b0000,0x21000),(0x1fe000,0x2000),(0x92008,8)):
+        for address,size in ((0x180000,0xb000),(0x1b0000,0x21000),(0x1fe000,0x2000),(0x92008,8),(0x190000,0x3000)):
             originals.append((address,guest.read(address,size)))
         if mutant:
             if mutant=='rx-budget':
@@ -167,6 +167,8 @@ def test(build, output, mutant=False):
                 assert guest.read(0x181080+slot*16,16)==before and u32(mmio+0x3818)==tail
             assert guest.read(buffer-1,1)==b'\xa5' and guest.read(buffer+2048,1)==b'\x5a'
             checks.append({'function':'nic_send','length':length,'queued':valid,'zero_padding_checked':valid and length<60})
+        if extra:
+            extra(guest, invoke, checks, symbols, mmio, run, set32, u32, originals)
         result.update({'ok':True,'checks':checks,'guard_boundary':0x200000})
     except Exception as error:
         result['error']=str(error) or type(error).__name__
@@ -186,7 +188,7 @@ def test(build, output, mutant=False):
                 if saved:
                     guest.set(saved)
                 if mmio:
-                    for offset in (0x2818,0x3818,0x100,0x400):
+                    for offset in (0x2818,0x3818,0x3810,0x100,0x400):
                         guest.write(mmio+offset,controls[offset])
                 (run/'raw-driver.mi').write_bytes(guest.debugger.transcript)
                 guest.debugger.close()

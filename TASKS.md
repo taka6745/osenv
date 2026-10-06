@@ -219,3 +219,37 @@ new capture storage runs that verification before atomic replacement and passed
 actual boot/debug/fault/recovery plus dense/zero/tail/missing-file regressions.
 Release validation uses external local/t023; frozen source and exact-head CI
 verdicts stay separate from cold entry, powered state and physical power-on.
+
+T024 — Goal: distinguish literal-OS work reductions from client/VM bottlenecks.
+Interface: actual DMA/checksum/queued-SYN gates and matched packet-peer trials.
+Prerequisites: exact T023 baseline, authored guest bytes, unchanged safety checks.
+Acceptance: real packets, independent capture checks, deliberate ownership/queue/
+TXSM defects, matched clocks/inputs/backend and retained failed trials.
+Added peer_bench, raw_tx_test, raw_queue_test and raw_offload_test. Host checksum
+helper is authored, bounded, header-free and never enters the guest;20,000 seeded
+vectors agree with the independent Python oracle. Optional deferred HTTP parsing
+still proves exact validated response bytes inline and checks every captured
+response before verdict. Source/tool/helper hashes, inputs and failed trials stay
+external. New-SYN/old-FIN race is independently reproduced; the exact corrected
+guest passed88 checks, publication mutant, full local/homelab gates and30,000
+requests. DMA/cache/empty-poll trials established no serving gain. Extended NIC
+checksum insertion passed actual metadata and both NIC wire gates but was slower;
+static scatter/gather also passed and was slower. Neither ships. Evidence:local/t024.
+
+Harness follow-up: default inline and optional native-checksum/deferred-HTTP peers
+retain complete wire verification. Exact queue-release PVH locally passed a
+100-request smoke, 101 five-frame exchanges and nine verified raw source snapshots.
+Post-measurement backfill verified 37 measured variants from frozen uploads and
+retained builds; original reports/plans remain unchanged. New evidence is under
+local/t024/provenance-check-20261006 and provenance-backfill-20261006.
+Owned homelab profiling now records thread identities, multiplexing and explicit
+host/guest PMU filters. Separate three-second host samples observed 92M idle versus
+2.47B serving cycles; separate guest-filtered samples observed 2.56M idle versus
+121M serving cycles. Serving workloads each verified 5000 requests, but these
+separate runs do not establish an exact guest/host fraction. Missing perf/qboot
+attempts remain failures; extracted tools stayed in owned external directories.
+KVM exit tracing used the already readable tracepoint:1509 idle/98,236 serving
+exits in separate three-second counter windows. A separate bounded trace located
+24,316 of53,557 sampled serving exits at the HPET read; partial workload overlap
+precludes per-request attribution. No physical-board cache/cycle claim. Forty
+host regressions pass, including counter-scope/parser and provenance policy tests.
