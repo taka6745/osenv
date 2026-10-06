@@ -31,7 +31,8 @@ jobs:
       - name: Boot and debugger gate
         run: python3 -m osenv test > gate.json
       - name: Literal placement, optimal codec, bit accounting and clock regressions
-        run: python3 -m unittest osenv.raw_build_test osenv.raw_codec_test osenv.raw_size_test osenv.boot_timing_test osenv.experiment_test osenv.acceleration_test osenv.capture_storage_test -v
+        run: |
+          python3 -m unittest osenv.raw_build_test osenv.raw_codec_test osenv.raw_size_test osenv.boot_timing_test osenv.experiment_test osenv.acceleration_test osenv.capture_storage_test -v
           python3 -m unittest discover -s tests -p test_host_perf.py -v
       - name: Publish verdict and small diagnostics
         if: always()
